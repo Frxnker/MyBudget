@@ -93,9 +93,9 @@ const App = (() => {
    * TEMA
    * ------------------------------------------------------------- */
 
-  function applyTheme(theme) {
+  function applyTheme(theme, { save = true } = {}) {
     document.documentElement.dataset.theme = theme;
-    Store.setTheme(theme);
+    if (save) Store.setTheme(theme);
     const toggle = $('#theme-toggle');
     const icon = toggle.querySelector('.theme-icon');
     icon.dataset.icon = theme === 'dark' ? 'sun' : 'moon';
@@ -324,8 +324,14 @@ const App = (() => {
     initActions();
     initShortcuts();
 
-    // Cualquier cambio en los datos vuelve a pintar la vista actual
-    Store.subscribe(() => render());
+    // Cualquier cambio en los datos (también desde otra pestaña) vuelve a pintar la vista actual
+    Store.subscribe((key) => {
+      if (key === 'theme') {
+        const theme = Store.getTheme();
+        if (theme === 'light' || theme === 'dark') applyTheme(theme, { save: false });
+      }
+      render();
+    });
 
     $('#menu-toggle').addEventListener('click', openSidebar);
     $('#sidebar-close').addEventListener('click', closeSidebar);

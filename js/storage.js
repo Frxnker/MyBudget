@@ -170,7 +170,38 @@ const Store = (() => {
       cache[key] = stored === undefined ? def[key] : sanitizers[key](stored);
     });
     if (isFirstRun) COLLECTIONS.forEach((key) => write(key, cache[key]));
+    window.addEventListener('storage', handleExternalChange);
     return { isFirstRun };
+  }
+
+  /** Vuelve a leer una colección de LocalStorage y la pasa por su sanitizer */
+  function reload(key) {
+    const stored = read(key);
+    cache[key] = stored === undefined ? defaults()[key] : sanitizers[key](stored);
+  }
+
+  /**
+   * Sincroniza entre pestañas. El navegador lanza el evento "storage" en las demás pestañas
+   * abiertas cuando una de ellas modifica LocalStorage (nunca en la que hizo el cambio).
+   */
+  function handleExternalChange(event) {
+    if (event.storageArea !== localStorage) return;
+
+    // key === null → otra pestaña ha ejecutado localStorage.clear()
+    if (event.key === null) {
+      COLLECTIONS.forEach(reload);
+      notify('all');
+      return;
+    }
+    if (!event.key.startsWith(PREFIX)) return;
+
+    const key = event.key.slice(PREFIX.length);
+    if (COLLECTIONS.includes(key)) {
+      reload(key);
+      notify(key);
+    } else if (key === 'theme') {
+      notify('theme'); // el tema no tiene caché: lo aplica App
+    }
   }
 
   function get(key) {
