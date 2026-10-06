@@ -156,8 +156,8 @@ const Categories = (() => {
         <span class="category-name">${escapeHTML(c.name)}</span>
         ${c.custom
           ? `<span class="badge">Personalizada</span>
-             <button class="btn-icon btn-icon-sm" data-action="edit-category" data-id="${c.id}" aria-label="Editar ${escapeHTML(c.name)}">${Icons.get('edit', 16)}</button>
-             <button class="btn-icon btn-icon-sm btn-icon-danger" data-action="delete-category" data-id="${c.id}" aria-label="Eliminar ${escapeHTML(c.name)}">${Icons.get('trash', 16)}</button>`
+             <button class="btn-icon btn-icon-sm" data-action="edit-category" data-id="${escapeHTML(c.id)}" aria-label="Editar ${escapeHTML(c.name)}">${Icons.get('edit', 16)}</button>
+             <button class="btn-icon btn-icon-sm btn-icon-danger" data-action="delete-category" data-id="${escapeHTML(c.id)}" aria-label="Eliminar ${escapeHTML(c.name)}">${Icons.get('trash', 16)}</button>`
           : '<span class="badge badge-muted">Predeterminada</span>'}
       </li>`).join('');
   }

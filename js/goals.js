@@ -166,8 +166,8 @@ const Goals = (() => {
             ${p.completed ? '<span class="pill pill-income">🎉 Completado</span>' : `<span class="muted">Faltan ${formatMoney(p.remaining)}</span>`}
           </div>
           <div class="card-actions">
-            <button class="btn-icon btn-icon-sm" data-action="edit-goal" data-id="${goal.id}" aria-label="Editar ${escapeHTML(goal.name)}">${Icons.get('edit', 16)}</button>
-            <button class="btn-icon btn-icon-sm btn-icon-danger" data-action="delete-goal" data-id="${goal.id}" aria-label="Eliminar ${escapeHTML(goal.name)}">${Icons.get('trash', 16)}</button>
+            <button class="btn-icon btn-icon-sm" data-action="edit-goal" data-id="${escapeHTML(goal.id)}" aria-label="Editar ${escapeHTML(goal.name)}">${Icons.get('edit', 16)}</button>
+            <button class="btn-icon btn-icon-sm btn-icon-danger" data-action="delete-goal" data-id="${escapeHTML(goal.id)}" aria-label="Eliminar ${escapeHTML(goal.name)}">${Icons.get('trash', 16)}</button>
           </div>
         </header>
         <div class="goal-figures">
@@ -177,7 +177,7 @@ const Goals = (() => {
         </div>
         ${UI.progressBar(p.pct, 'goal', `Progreso de ${goal.name}`)}
         ${deadlineText ? `<p class="goal-deadline">${Icons.get('calendar', 16)}<span>${deadlineText}</span></p>` : ''}
-        <button class="btn btn-ghost btn-block" data-action="contribute-goal" data-id="${goal.id}">${Icons.get('coins', 16)}Actualizar ahorro</button>
+        <button class="btn btn-ghost btn-block" data-action="contribute-goal" data-id="${escapeHTML(goal.id)}">${Icons.get('coins', 16)}Actualizar ahorro</button>
       </article>`;
   }
 

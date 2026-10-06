@@ -200,8 +200,8 @@ const Budget = (() => {
             <span class="muted">${formatMoney(s.limit)}/mes</span>
           </div>
           <div class="card-actions">
-            <button class="btn-icon btn-icon-sm" data-action="edit-category-budget" data-id="${s.categoryId}" aria-label="Editar límite de ${escapeHTML(s.category.name)}">${Icons.get('edit', 16)}</button>
-            <button class="btn-icon btn-icon-sm btn-icon-danger" data-action="delete-category-budget" data-id="${s.categoryId}" aria-label="Eliminar límite de ${escapeHTML(s.category.name)}">${Icons.get('trash', 16)}</button>
+            <button class="btn-icon btn-icon-sm" data-action="edit-category-budget" data-id="${escapeHTML(s.categoryId)}" aria-label="Editar límite de ${escapeHTML(s.category.name)}">${Icons.get('edit', 16)}</button>
+            <button class="btn-icon btn-icon-sm btn-icon-danger" data-action="delete-category-budget" data-id="${escapeHTML(s.categoryId)}" aria-label="Eliminar límite de ${escapeHTML(s.category.name)}">${Icons.get('trash', 16)}</button>
           </div>
         </header>
         ${UI.progressBar(s.pct, s.level, `Límite de ${s.category.name}`)}
@@ -267,7 +267,7 @@ const Budget = (() => {
                 ${UI.categoryBadge(c.category, 'sm')}
                 <span class="grow">${escapeHTML(c.category.name)}</span>
                 <strong>${formatMoney(c.total)}</strong>
-                <button class="btn btn-ghost btn-sm" data-action="edit-category-budget-new" data-id="${c.categoryId}">Poner límite</button>
+                <button class="btn btn-ghost btn-sm" data-action="edit-category-budget-new" data-id="${escapeHTML(c.categoryId)}">Poner límite</button>
               </li>`).join('')}
           </ul>
         </div>` : ''}`;

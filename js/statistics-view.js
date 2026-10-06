@@ -23,7 +23,7 @@ const StatsView = (() => {
     const totals = Stats.summarize(Transactions.all().filter((t) => t.date.startsWith(`${year}-`)));
     const row = (m) => `
       <tr class="${m.key === selectedKey ? 'is-selected' : ''} ${m.count ? '' : 'is-empty-row'}">
-        <td data-label="Mes"><button class="link-button" data-action="select-month" data-id="${m.key}">${monthLabel(m.key).split(' ')[0]}</button></td>
+        <td data-label="Mes"><button class="link-button" data-action="select-month" data-id="${escapeHTML(m.key)}">${monthLabel(m.key).split(' ')[0]}</button></td>
         <td data-label="Ingresos" class="td-amount amount-income">${formatMoney(m.income)}</td>
         <td data-label="Gastos" class="td-amount amount-expense">${formatMoney(m.expense)}</td>
         <td data-label="Ahorro" class="td-amount">${formatMoney(m.savings, { sign: true })}</td>

@@ -224,11 +224,11 @@ const Recurring = (() => {
           ${next ? `Próximo pago: <strong>${formatDate(next)}</strong> <span class="muted">(${Utils.relativeDays(next)})</span>` : 'Sin próximos pagos (pausado)'}
         </p>
         <footer class="card-footer-actions">
-          <button class="btn btn-ghost btn-sm" data-action="pay-recurring" data-id="${item.id}">${Icons.get('receipt', 16)}Registrar pago</button>
+          <button class="btn btn-ghost btn-sm" data-action="pay-recurring" data-id="${escapeHTML(item.id)}">${Icons.get('receipt', 16)}Registrar pago</button>
           <div class="card-actions">
-            <button class="btn-icon btn-icon-sm" data-action="toggle-recurring" data-id="${item.id}" title="${item.active ? 'Pausar' : 'Reactivar'}" aria-label="${item.active ? 'Pausar' : 'Reactivar'} ${escapeHTML(item.name)}">${Icons.get(item.active ? 'pause' : 'play', 16)}</button>
-            <button class="btn-icon btn-icon-sm" data-action="edit-recurring" data-id="${item.id}" title="Editar" aria-label="Editar ${escapeHTML(item.name)}">${Icons.get('edit', 16)}</button>
-            <button class="btn-icon btn-icon-sm btn-icon-danger" data-action="delete-recurring" data-id="${item.id}" title="Eliminar" aria-label="Eliminar ${escapeHTML(item.name)}">${Icons.get('trash', 16)}</button>
+            <button class="btn-icon btn-icon-sm" data-action="toggle-recurring" data-id="${escapeHTML(item.id)}" title="${item.active ? 'Pausar' : 'Reactivar'}" aria-label="${item.active ? 'Pausar' : 'Reactivar'} ${escapeHTML(item.name)}">${Icons.get(item.active ? 'pause' : 'play', 16)}</button>
+            <button class="btn-icon btn-icon-sm" data-action="edit-recurring" data-id="${escapeHTML(item.id)}" title="Editar" aria-label="Editar ${escapeHTML(item.name)}">${Icons.get('edit', 16)}</button>
+            <button class="btn-icon btn-icon-sm btn-icon-danger" data-action="delete-recurring" data-id="${escapeHTML(item.id)}" title="Eliminar" aria-label="Eliminar ${escapeHTML(item.name)}">${Icons.get('trash', 16)}</button>
           </div>
         </footer>
       </article>`;

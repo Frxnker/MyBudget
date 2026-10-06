@@ -60,26 +60,41 @@ const Store = (() => {
   const isText = (v) => typeof v === 'string';
   const isPositiveInt = (v) => Number.isInteger(v) && v > 0;
 
+  // Los ids se insertan en atributos HTML (data-id, value…): solo letras, números, "_" y "-"
+  const ID_PATTERN = /^[\w-]{1,64}$/;
+  const isValidId = (v) => isText(v) && ID_PATTERN.test(v);
+  const optionalId = (v) => (isValidId(v) ? v : '');
+
+  /** Elimina los elementos con un id repetido (se conserva el primero) */
+  function uniqueById(list) {
+    const seen = new Set();
+    return list.filter((item) => {
+      if (seen.has(item.id)) return false;
+      seen.add(item.id);
+      return true;
+    });
+  }
+
   const sanitizers = {
-    transactions: (list) => (Array.isArray(list) ? list : [])
-      .filter((t) => t && isText(t.id) && ['income', 'expense'].includes(t.type)
+    transactions: (list) => uniqueById((Array.isArray(list) ? list : [])
+      .filter((t) => t && isValidId(t.id) && ['income', 'expense'].includes(t.type)
         && isPositiveInt(t.amount) && Utils.isValidISODate(t.date))
       .map((t) => ({
         id: t.id,
         type: t.type,
         concept: isText(t.concept) ? t.concept.slice(0, 80) : 'Sin concepto',
         amount: t.amount,
-        categoryId: isText(t.categoryId) ? t.categoryId : '',
+        categoryId: optionalId(t.categoryId),
         date: t.date,
         method: isText(t.method) ? t.method : '',
         notes: isText(t.notes) ? t.notes.slice(0, 300) : '',
         createdAt: Number(t.createdAt) || Date.now(),
         ...(t.demo ? { demo: true } : {}),
-      })),
+      }))),
 
     categories: (list) => {
-      const valid = (Array.isArray(list) ? list : [])
-        .filter((c) => c && isText(c.id) && isText(c.name) && ['income', 'expense'].includes(c.type))
+      const valid = uniqueById((Array.isArray(list) ? list : [])
+        .filter((c) => c && isValidId(c.id) && isText(c.name) && ['income', 'expense'].includes(c.type))
         .map((c) => ({
           id: c.id,
           name: c.name.slice(0, 30),
@@ -87,7 +102,7 @@ const Store = (() => {
           type: c.type,
           color: /^#[0-9a-f]{6}$/i.test(c.color) ? c.color : '#8b8d98',
           custom: Boolean(c.custom),
-        }));
+        })));
       // Nos aseguramos de que las categorías predeterminadas siempre existan
       Categories.defaults().forEach((def) => {
         if (!valid.some((c) => c.id === def.id)) valid.push(def);
@@ -100,30 +115,30 @@ const Store = (() => {
       if (obj && Number.isInteger(obj.monthly) && obj.monthly >= 0) result.monthly = obj.monthly;
       if (obj && obj.byCategory && typeof obj.byCategory === 'object') {
         Object.entries(obj.byCategory).forEach(([id, value]) => {
-          if (isPositiveInt(value)) result.byCategory[id] = value;
+          if (isValidId(id) && isPositiveInt(value)) result.byCategory[id] = value;
         });
       }
       return result;
     },
 
-    recurring: (list) => (Array.isArray(list) ? list : [])
-      .filter((r) => r && isText(r.id) && isText(r.name) && isPositiveInt(r.amount)
+    recurring: (list) => uniqueById((Array.isArray(list) ? list : [])
+      .filter((r) => r && isValidId(r.id) && isText(r.name) && isPositiveInt(r.amount)
         && Number.isInteger(r.day) && r.day >= 1 && r.day <= 31)
       .map((r) => ({
         id: r.id,
         name: r.name.slice(0, 60),
         amount: r.amount,
-        categoryId: isText(r.categoryId) ? r.categoryId : '',
+        categoryId: optionalId(r.categoryId),
         day: r.day,
         frequency: Recurring.FREQUENCIES[r.frequency] ? r.frequency : 'monthly',
         startMonth: Utils.isValidMonthKey(r.startMonth) ? r.startMonth : Utils.currentMonthKey(),
         method: isText(r.method) ? r.method : '',
         active: r.active !== false,
         ...(r.demo ? { demo: true } : {}),
-      })),
+      }))),
 
-    goals: (list) => (Array.isArray(list) ? list : [])
-      .filter((g) => g && isText(g.id) && isText(g.name) && isPositiveInt(g.target))
+    goals: (list) => uniqueById((Array.isArray(list) ? list : [])
+      .filter((g) => g && isValidId(g.id) && isText(g.name) && isPositiveInt(g.target))
       .map((g) => ({
         id: g.id,
         name: g.name.slice(0, 60),
@@ -133,7 +148,7 @@ const Store = (() => {
         deadline: Utils.isValidISODate(g.deadline) ? g.deadline : '',
         createdAt: Number(g.createdAt) || Date.now(),
         ...(g.demo ? { demo: true } : {}),
-      })),
+      }))),
 
     settings: (obj) => ({
       ...defaults().settings,

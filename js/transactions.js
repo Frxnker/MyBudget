@@ -402,7 +402,7 @@ const Transactions = (() => {
     const type = $('#filter-type').value;
     const current = state.filters.categoryId;
     const group = (t, label) => `<optgroup label="${label}">${
-      Categories.byType(t).map((c) => `<option value="${c.id}">${escapeHTML(`${c.icon}  ${c.name}`)}</option>`).join('')
+      Categories.byType(t).map((c) => `<option value="${escapeHTML(c.id)}">${escapeHTML(`${c.icon}  ${c.name}`)}</option>`).join('')
     }</optgroup>`;
     select.innerHTML = '<option value="">Todas</option>'
       + (type !== 'income' ? group('expense', 'Gastos') : '')
@@ -451,9 +451,9 @@ const Transactions = (() => {
         <td data-label="Método">${escapeHTML(t.method || '—')}</td>
         <td data-label="Cantidad" class="td-amount amount-${t.type}">${formatMoney(sign * t.amount, { sign: true })}</td>
         <td data-label="Acciones" class="td-actions">
-          <button class="btn-icon btn-icon-sm" data-action="edit-tx" data-id="${t.id}" title="Editar" aria-label="Editar ${escapeHTML(t.concept)}">${Icons.get('edit', 16)}</button>
-          <button class="btn-icon btn-icon-sm" data-action="duplicate-tx" data-id="${t.id}" title="Duplicar" aria-label="Duplicar ${escapeHTML(t.concept)}">${Icons.get('copy', 16)}</button>
-          <button class="btn-icon btn-icon-sm btn-icon-danger" data-action="delete-tx" data-id="${t.id}" title="Eliminar" aria-label="Eliminar ${escapeHTML(t.concept)}">${Icons.get('trash', 16)}</button>
+          <button class="btn-icon btn-icon-sm" data-action="edit-tx" data-id="${escapeHTML(t.id)}" title="Editar" aria-label="Editar ${escapeHTML(t.concept)}">${Icons.get('edit', 16)}</button>
+          <button class="btn-icon btn-icon-sm" data-action="duplicate-tx" data-id="${escapeHTML(t.id)}" title="Duplicar" aria-label="Duplicar ${escapeHTML(t.concept)}">${Icons.get('copy', 16)}</button>
+          <button class="btn-icon btn-icon-sm btn-icon-danger" data-action="delete-tx" data-id="${escapeHTML(t.id)}" title="Eliminar" aria-label="Eliminar ${escapeHTML(t.concept)}">${Icons.get('trash', 16)}</button>
         </td>
       </tr>`;
   }

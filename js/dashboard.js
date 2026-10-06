@@ -66,7 +66,7 @@ const Dashboard = (() => {
       const sign = t.type === 'income' ? 1 : -1;
       return `
         <li>
-          <button class="tx-list-item" data-action="edit-tx" data-id="${t.id}" title="Editar movimiento">
+          <button class="tx-list-item" data-action="edit-tx" data-id="${escapeHTML(t.id)}" title="Editar movimiento">
             ${UI.categoryBadge(category)}
             <span class="grow">
               <strong>${escapeHTML(t.concept)}</strong>
