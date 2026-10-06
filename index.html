@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <meta name="description" content="Gestor de gastos personales: controla ingresos, gastos, presupuestos y objetivos de ahorro.">
   <meta name="theme-color" content="#5b5bd6">
   <title>MyBudget · Gestor de gastos</title>
@@ -114,8 +114,16 @@
     </div>
   </div>
 
-  <!-- Botón flotante (móvil) -->
-  <button class="fab" id="fab" aria-label="Añadir movimiento" data-icon="plus"></button>
+  <!-- ============ BARRA DE NAVEGACIÓN INFERIOR (solo móvil) ============ -->
+  <nav class="tabbar" id="tabbar" aria-label="Navegación principal">
+    <a href="#/dashboard" class="tab-link" data-view="dashboard"><span class="tab-icon" data-icon="home" data-size="22"></span><span class="tab-label">Inicio</span></a>
+    <a href="#/movimientos" class="tab-link" data-view="movimientos"><span class="tab-icon" data-icon="wallet" data-size="22"></span><span class="tab-label">Movimientos</span></a>
+    <div class="tab-add-slot">
+      <button class="tab-add" id="tab-add" type="button" aria-label="Añadir movimiento" data-icon="plus" data-size="26"></button>
+    </div>
+    <a href="#/estadisticas" class="tab-link" data-view="estadisticas"><span class="tab-icon" data-icon="chart" data-size="22"></span><span class="tab-label">Estadísticas</span></a>
+    <button class="tab-link" id="tab-more" type="button" aria-controls="sidebar" aria-expanded="false"><span class="tab-icon" data-icon="more" data-size="22"></span><span class="tab-label">Más</span></button>
+  </nav>
 
   <!-- ============ MODAL: MOVIMIENTO ============ -->
   <dialog class="modal" id="tx-modal" aria-labelledby="tx-modal-title">
@@ -381,6 +389,15 @@
     <footer class="modal-footer">
       <button type="button" class="btn btn-ghost" id="confirm-cancel">Cancelar</button>
       <button type="button" class="btn btn-danger" id="confirm-accept">Eliminar</button>
+    </footer>
+  </dialog>
+
+  <!-- ============ MENÚ DE ACCIONES (lo rellena UI.actionSheet) ============ -->
+  <dialog class="modal modal-sm action-sheet" id="action-sheet" aria-labelledby="action-sheet-title" tabindex="-1">
+    <header class="action-sheet-header" id="action-sheet-header"></header>
+    <div class="action-sheet-list" id="action-sheet-list"></div>
+    <footer class="modal-footer">
+      <button type="button" class="btn btn-ghost btn-block" data-close>Cancelar</button>
     </footer>
   </dialog>
 

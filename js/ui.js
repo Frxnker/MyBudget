@@ -21,7 +21,7 @@ const UI = (() => {
     el.setAttribute('role', type === 'error' ? 'alert' : 'status');
     el.innerHTML = `
       <span class="toast-icon">${Icons.get(TOAST_ICONS[type] || 'info', 18)}</span>
-      <span class="toast-message">${escapeHTML(message)}</span>
+      <span class="toast-message" title="${escapeHTML(message)}">${escapeHTML(message)}</span>
       ${action ? `<button class="toast-action">${escapeHTML(action.label)}</button>` : ''}
       <button class="toast-close" aria-label="Cerrar notificación">${Icons.get('x', 16)}</button>`;
     container.appendChild(el);
@@ -77,6 +77,28 @@ const UI = (() => {
         if (form) clearErrors(form);
       });
     });
+  }
+
+  /**
+   * Menú de acciones en forma de hoja inferior (se usa en móvil).
+   * Cada opción es { label, icon, action, id, danger }: el botón lleva data-action / data-id,
+   * así que la acción la ejecuta el mismo manejador global que el resto de botones (app.js).
+   */
+  function actionSheet({ title, subtitle = '', media = '', items }) {
+    $('#action-sheet-header').innerHTML = `
+      ${media}
+      <div class="grow">
+        <h2 id="action-sheet-title">${escapeHTML(title)}</h2>
+        ${subtitle ? `<p>${escapeHTML(subtitle)}</p>` : ''}
+      </div>`;
+    $('#action-sheet-list').innerHTML = items.map((item) => `
+      <button type="button" class="action-sheet-item ${item.danger ? 'is-danger' : ''}" data-close
+        data-action="${escapeHTML(item.action)}" ${item.id ? `data-id="${escapeHTML(item.id)}"` : ''}>
+        ${Icons.get(item.icon, 20)}<span>${escapeHTML(item.label)}</span>
+      </button>`).join('');
+    openModal('action-sheet');
+    // El foco va a la hoja (no a la primera opción) para que no aparezca resaltada al tocar
+    $('#action-sheet').focus();
   }
 
   function isAnyModalOpen() {
@@ -341,7 +363,7 @@ const UI = (() => {
   }
 
   return {
-    toast, openModal, closeModal, initModals, isAnyModalOpen, confirm,
+    toast, openModal, closeModal, initModals, actionSheet, isAnyModalOpen, confirm,
     clearErrors, showErrors, liveClearErrors, validateAmount,
     emptyState, budgetLevel, progressBar, ring, sparkline, money, kpi, dateTile, categoryChip,
     categoryBadge, trendBadge, setLoading, fillSelect,

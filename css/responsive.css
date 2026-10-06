@@ -3,8 +3,12 @@
    - ≤ 1280px: portátiles (1366x768)
    - ≤ 1180px: el dashboard pasa a una columna
    - ≤ 1024px: tablets → la barra lateral pasa a ser un menú desplegable
-   - ≤ 768px : móviles → tablas en formato tarjeta y buscador plegable
+   - ≤ 768px : móviles → barra de navegación inferior, cabecera compacta,
+               listas en formato tarjeta y buscador plegable
    - ≤ 560px : móviles estrechos → modales tipo "bottom sheet"
+   - Pantallas táctiles (hover: none) → sin referencias al teclado
+   En móvil se respetan las zonas seguras del iPhone (notch y barra de inicio)
+   con env(safe-area-inset-*), gracias a viewport-fit=cover en index.html.
    ========================================================================== */
 
 /* ---------- Portátiles ---------- */
@@ -93,54 +97,356 @@
 
 /* ---------- Móviles ---------- */
 @media (max-width: 768px) {
-  body { font-size: 14px; }
-
-  .content { padding: 16px 16px 100px; }
-
-  .topbar {
-    gap: 8px 10px;
-    padding: 10px 16px;
+  :root {
+    --tabbar-height: 64px;
+    /* Espacio reservado abajo para la barra inferior, incluida la zona segura del iPhone */
+    --bottom-space: calc(var(--tabbar-height) + env(safe-area-inset-bottom, 0px));
   }
 
-  .topbar-title h1 { font-size: 1.2rem; }
-  .topbar-title p { display: none; }
+  body { font-size: 14px; }
+
+  .content {
+    padding: 16px calc(16px + env(safe-area-inset-right, 0px)) calc(var(--bottom-space) + 24px) calc(16px + env(safe-area-inset-left, 0px));
+  }
+
+  /* --- Barra de navegación inferior --- */
+  .tabbar {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 60;
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    height: var(--bottom-space);
+    padding: 0 env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
+    border-top: 1px solid var(--border);
+    background: color-mix(in srgb, var(--surface) 88%, transparent);
+    backdrop-filter: saturate(160%) blur(18px);
+    -webkit-backdrop-filter: saturate(160%) blur(18px);
+    box-shadow: 0 -10px 30px -22px rgba(18, 19, 40, 0.45);
+  }
+
+  .tab-link {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    min-width: 44px;
+    height: var(--tabbar-height);
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--text-muted);
+    font-size: 0.66rem;
+    font-weight: 600;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* El icono activo va dentro de una "pastilla" de color, como en las apps nativas */
+  .tab-icon {
+    display: grid;
+    place-items: center;
+    width: 52px;
+    height: 30px;
+    border-radius: 999px;
+    transition: background-color 0.2s, transform 0.15s var(--ease);
+  }
+
+  .tab-label {
+    max-width: 100%;
+    overflow: hidden;
+    letter-spacing: -0.01em;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .tab-link.is-active {
+    color: var(--primary);
+    font-weight: 700;
+  }
+
+  .tab-link.is-active .tab-icon { background: var(--primary-soft); }
+  .tab-link:active .tab-icon { transform: scale(0.92); }
+
+  /* Botón central "+": cabe dentro de la barra, así no tapa el contenido */
+  .tab-add-slot {
+    display: grid;
+    place-items: center;
+    height: var(--tabbar-height);
+  }
+
+  .tab-add {
+    display: grid;
+    place-items: center;
+    width: 52px;
+    height: 46px;
+    border: 0;
+    border-radius: 16px;
+    background: linear-gradient(180deg, color-mix(in srgb, var(--primary) 85%, #fff), var(--primary));
+    color: var(--on-primary);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25), 0 10px 22px -10px var(--primary);
+    transition: transform 0.15s var(--ease);
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .tab-add:active { transform: scale(0.94); }
+
+  /* El menú lateral se abre desde "Más" y respeta las zonas seguras */
+  .sidebar {
+    padding-top: calc(20px + env(safe-area-inset-top, 0px));
+    padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .nav-link,
+  .sidebar-action { min-height: 46px; }
+
+  /* --- Cabecera compacta y fija: título, mes y buscador en una sola franja --- */
+  .topbar {
+    gap: 8px;
+    padding: calc(8px + env(safe-area-inset-top, 0px)) calc(10px + env(safe-area-inset-right, 0px)) 8px calc(16px + env(safe-area-inset-left, 0px));
+  }
+
+  .topbar .menu-toggle { display: none; }
   .topbar-add { display: none; }
 
-  /* El buscador se despliega con su botón para no ocupar espacio fijo */
-  .topbar .search-toggle { display: inline-grid; }
+  .topbar-title { flex: 1; }
+  .topbar-title p { display: none; }
+
+  .topbar-title h1 {
+    overflow: hidden;
+    font-size: 1.15rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .month-picker {
+    order: 1;
+    padding: 2px;
+  }
+
+  .month-picker .btn-icon {
+    width: 34px;
+    height: 40px;
+  }
+
+  .month-label {
+    align-self: stretch;
+    min-width: 0;
+    min-height: 40px;
+    padding: 0 4px;
+    font-size: 0.86rem;
+  }
+
+  .month-label .icon,
+  .month-label .month-long,
+  .month-label small { display: none; }
+  .month-label .month-short { display: inline; }
+
+  /* Fuera del mes actual, el mes se resalta en color (al tocarlo se vuelve a hoy) */
+  .month-label:not(.is-current) { color: var(--primary); }
+
+  .topbar .search-toggle {
+    display: inline-grid;
+    order: 2;
+  }
+
   .global-search { display: none; }
   .topbar.search-open .global-search { display: block; }
   .topbar.search-open .search-toggle { background: var(--primary-soft); color: var(--primary); }
 
-  .month-picker {
-    order: 11;
-    flex-basis: 100%;
-    justify-content: space-between;
+  /* --- Áreas táctiles: al menos 44×44 px --- */
+  .btn { min-height: 44px; }
+  .btn-icon:not(.btn-icon-sm) { width: 44px; height: 44px; }
+  .segmented-option > span { min-height: 44px; }
+
+  /* 16 px evita que iOS haga zoom al enfocar un campo */
+  input,
+  select,
+  textarea {
+    min-height: 44px;
+    font-size: 16px;
   }
 
-  .view.is-active,
+  textarea { min-height: 0; }
+
+  /* Los controles pequeños conservan su aspecto pero amplían la zona que se puede tocar */
+  .btn-sm,
+  .btn-icon-sm,
+  .month-picker .btn-icon,
+  .month-label,
+  .toast-close,
+  .link,
+  .link-button,
+  .alert-link {
+    position: relative;
+  }
+
+  .btn-sm::after,
+  .btn-icon-sm::after,
+  .month-picker .btn-icon::after,
+  .month-label::after,
+  .toast-close::after,
+  .link::after,
+  .link-button::after,
+  .alert-link::after {
+    content: '';
+    position: absolute;
+  }
+
+  .btn-sm::after { inset: -2px; }
+  .btn-icon-sm::after { inset: -6px; }
+  .month-picker .btn-icon::after { inset: -2px -5px; }
+  .month-label::after { inset: -2px 0; }
+  .td-actions .row-menu::after { inset: 0 -8px; }
+  .link-button::after { inset: -12px -6px; }
+  .toast-close::after { inset: -10px; }
+  .link::after,
+  .alert-link::after { inset: -12px -8px; }
+
+  /* --- Ritmo vertical: menos aire dentro de las tarjetas y algo más entre secciones --- */
+  .view.is-active { gap: 20px; }
   .grid { gap: 16px; }
 
-  .card { padding: 18px; border-radius: var(--radius-lg); }
+  .card {
+    padding: 16px;
+    border-radius: var(--radius-lg);
+  }
+
+  .card-header,
+  .card > .card-title { margin-bottom: 12px; }
+
+  .card-title { font-size: 0.95rem; }
+
+  .card-title > .icon {
+    width: 28px;
+    height: 28px;
+    padding: 6px;
+  }
+
+  .card-subtitle { padding-left: 38px; }
+  .section-header h2 { font-size: 1.05rem; }
+
   .grid-2,
   .grid-3 { grid-template-columns: 1fr; }
   .grid-3 > :last-child:nth-child(odd) { grid-column: auto; }
 
-  .kpi-grid { gap: 12px; }
+  /* Textos cortos en móvil (ver .label-long / .label-short en el HTML) */
+  .label-long { display: none; }
+  .label-short { display: inline; }
+
+  /* --- KPIs: etiqueta en una línea e icono a la derecha → todas las cifras a la misma altura --- */
+  .kpi-grid { gap: 10px; }
   .kpi-grid-3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .kpi-grid-3 > :last-child { grid-column: span 2; }
-  .kpi { padding: 16px; }
+
+  .kpi {
+    gap: 8px;
+    padding: 14px;
+  }
+
+  .kpi-top {
+    justify-content: space-between;
+    gap: 6px;
+  }
+
+  .kpi-label {
+    min-width: 0;
+    overflow: hidden;
+    font-size: 0.75rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .kpi-icon {
+    order: 1;
+    width: 24px;
+    height: 24px;
+    border-radius: 8px;
+  }
+
+  .kpi-icon .icon {
+    width: 14px;
+    height: 14px;
+  }
+
   .kpi-value { font-size: 1.3rem; }
+
+  .kpi-foot {
+    gap: 6px;
+    font-size: 0.74rem;
+  }
+
+  /* --- Dashboard compacto --- */
+  .banner {
+    gap: 10px;
+    padding: 8px 6px 8px 12px;
+  }
+
+  .banner-icon {
+    width: 32px;
+    height: 32px;
+    border-radius: 10px;
+  }
+
+  .banner .grow strong {
+    display: block;
+    overflow: hidden;
+    font-size: 0.88rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .banner p { display: none; }
+
+  .alert {
+    gap: 8px;
+    padding: 10px 12px;
+    font-size: 0.84rem;
+  }
+
+  .alert > span {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
 
   .hero-card {
     display: flex;
-    padding: 22px;
+    gap: 14px;
+    padding: 18px;
   }
 
-  .hero-spark { align-self: stretch; }
+  .hero-balance { font-size: 2.3rem; }
+
+  .hero-spark {
+    --sparkline-height: 52px;
+    align-self: stretch;
+  }
+
+  /* Añadir gasto/ingreso ya está en el botón "+" de la barra inferior */
+  .hero-actions { display: none; }
+
+  /* --- Movimientos --- */
+  .page-actions {
+    flex-wrap: nowrap;
+    gap: 8px;
+  }
+
+  .page-actions .btn { flex: 1; }
+  .page-actions .page-export { display: none; }
+
+  .page-more {
+    display: inline-grid;
+    border: 1px solid var(--border-strong);
+    background: var(--surface);
+  }
 
   .summary-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .summary-item { padding: 14px 16px; }
+  .summary-item { padding: 12px 14px; }
   .summary-item:nth-child(3) { border-left: 0; }
   .summary-item:nth-child(n + 3) { border-top: 1px solid var(--border); }
   .summary-item strong { font-size: 1.1rem; }
@@ -152,42 +458,12 @@
   .filters-bar { flex-wrap: wrap; }
   .filter-search { flex-basis: 100%; }
 
-  .page-actions .btn { flex: 1; }
-
-  .chart-md,
-  .chart-lg { height: 260px; }
-
-  /* Botón flotante para añadir */
-  .fab {
-    position: fixed;
-    right: 18px;
-    bottom: 18px;
-    z-index: 40;
-    display: grid;
-    place-items: center;
-    width: 58px;
-    height: 58px;
-    border: 0;
-    border-radius: 18px;
-    background: linear-gradient(180deg, color-mix(in srgb, var(--primary) 85%, #fff), var(--primary));
-    color: #fff;
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25), 0 14px 30px -10px var(--primary);
-    transition: transform 0.2s var(--ease);
-  }
-
-  .fab:active { transform: scale(0.94); }
-  .fab .icon { width: 26px; height: 26px; }
-
-  .toast-container {
-    left: 16px;
-    right: 16px;
-    bottom: 92px;
-    align-items: stretch;
-  }
-
-  .toast { max-width: none; }
-
-  /* --- Movimientos: cada fila pasa a ser una tarjeta de dos líneas --- */
+  /*
+   * Cada movimiento es una tarjeta de dos líneas:
+   *   [icono] Concepto .................... -45,00 €  ⋯
+   *           ● Transporte · 6 oct · Tarjeta de débito
+   * Tocar la fila (o "⋯") abre el menú con Editar / Duplicar / Eliminar.
+   */
   .tx-table thead { display: none; }
 
   .tx-table,
@@ -195,16 +471,20 @@
 
   .tx-table tr {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: auto minmax(0, 1fr) auto auto;
     grid-template-areas:
-      "concept amount"
-      "category actions";
+      "badge title amount menu"
+      "badge meta  meta   menu";
     align-items: center;
-    gap: 8px 12px;
-    padding: 14px 16px;
+    column-gap: 12px;
+    row-gap: 2px;
+    padding: 12px 14px;
     border-bottom: 1px solid var(--border);
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
   }
 
+  .tx-table tbody tr:active { background: var(--surface-2); }
   .tx-table tbody tr:last-child { border-bottom: 0; }
 
   .tx-table td {
@@ -213,17 +493,110 @@
     border: 0 !important;
   }
 
-  .tx-table td[data-label="Concepto"] { grid-area: concept; min-width: 0; }
-  .tx-table td[data-label="Cantidad"] { grid-area: amount; font-size: 1rem; }
-  .tx-table td[data-label="Categoría"] { grid-area: category; padding-left: 46px; }
-  .tx-table td[data-label="Acciones"] { grid-area: actions; }
+  /* La celda del concepto "se abre" para que icono, título y detalle ocupen su zona de la rejilla */
+  .tx-table td[data-label="Concepto"],
+  .tx-table .concept-cell,
+  .tx-table .concept-cell > div { display: contents; }
+
+  .tx-table .concept-cell .cat-icon { grid-area: badge; }
+
+  .tx-table .concept-cell strong {
+    grid-area: title;
+    min-width: 0;
+    overflow: hidden;
+    font-size: 0.95rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .tx-table .concept-cell .concept-meta {
+    display: block;
+    grid-area: meta;
+    max-width: none;
+    font-size: 0.78rem;
+  }
+
+  .concept-meta .cat-dot {
+    display: inline-block;
+    margin-right: 5px;
+    vertical-align: 1px;
+  }
+
+  .tx-table .concept-notes { display: none; }
+
+  .tx-table td[data-label="Cantidad"] {
+    grid-area: amount;
+    font-size: 0.98rem;
+  }
+
+  .tx-table td[data-label="Acciones"] {
+    grid-area: menu;
+    margin-right: -6px;
+  }
+
+  .tx-table td[data-label="Acciones"] .btn-icon:not(.row-menu) { display: none; }
+
+  .tx-table .td-actions .row-menu {
+    display: inline-grid;
+    width: 28px;
+    height: 44px;
+    opacity: 1;
+  }
+
   .tx-table td[data-label="Fecha"],
+  .tx-table td[data-label="Categoría"],
   .tx-table td[data-label="Tipo"],
   .tx-table td[data-label="Método"] { display: none; }
 
-  .concept-cell { min-width: 0; }
-  .concept-cell .concept-meta { display: block; }
-  .concept-cell small { max-width: 100%; }
+  /* --- Notificaciones: una línea, por encima de la barra inferior --- */
+  .toast-container {
+    left: calc(12px + env(safe-area-inset-left, 0px));
+    right: calc(12px + env(safe-area-inset-right, 0px));
+    bottom: calc(var(--bottom-space) + 12px);
+    align-items: center;
+    gap: 8px;
+  }
+
+  .toast {
+    max-width: 100%;
+    gap: 10px;
+    padding: 6px 6px 6px 10px;
+    border-radius: 14px;
+    font-size: 0.86rem;
+  }
+
+  .toast-icon {
+    width: 24px;
+    height: 24px;
+  }
+
+  .toast-icon .icon {
+    width: 14px;
+    height: 14px;
+  }
+
+  .toast-message {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .toast-action { padding: 6px 8px; }
+
+  /* --- Gráficas --- */
+  .chart-md,
+  .chart-lg { height: 240px; }
+  .card-chart .chart-box { min-height: 240px; }
+
+  /* Donut proporcionado al ancho de la pantalla, con la leyenda debajo */
+  .chart-doughnut { height: clamp(210px, 62vw, 260px); }
+
+  .chart-legend {
+    gap: 8px;
+    margin-top: 14px;
+  }
 
   /* --- Tabla anual → tarjetas con etiquetas --- */
   .year-table thead { display: none; }
@@ -267,6 +640,7 @@
   .year-table td:first-child::before { content: none; }
   .year-table tfoot tr { background: var(--surface-2); }
 
+  /* --- Configuración y otros --- */
   .data-action,
   .danger-zone {
     flex-direction: column;
@@ -275,12 +649,6 @@
 
   .data-action .btn,
   .danger-zone .btn { width: 100%; }
-
-  .banner { flex-wrap: wrap; }
-  .banner .grow { flex-basis: calc(100% - 100px); }
-  .banner .btn { order: 3; flex: 1; }
-
-  .alert { flex-wrap: wrap; }
 
   .goal-progress { gap: 16px; }
 }
@@ -302,30 +670,42 @@
   .modal-body,
   .modal-footer { padding-left: 18px; padding-right: 18px; }
 
+  /* La hoja inferior no queda pegada a la barra de inicio del iPhone */
+  .modal-footer { padding-bottom: calc(20px + env(safe-area-inset-bottom, 0px)); }
+
   .modal-footer .btn { flex: 1; }
 
   .form-grid { grid-template-columns: 1fr; }
   .span-2 { grid-column: auto; }
   .amount-row { grid-template-columns: 1fr; }
-  .amount-row input[type="date"] { min-height: 42px; }
+  .amount-row input[type="date"] { min-height: 44px; }
 
   .stat-grid { grid-template-columns: 1fr; }
-  .hero-actions .btn { flex: 1; }
 
   .budget-figures { gap: 8px; }
   .budget-figures strong { font-size: 1.2rem; }
 
   .filters-grid { gap: 10px; }
-
-  .month-label { min-width: 0; }
 }
 
+/* Móviles de 360 px: el título y el mes caben en la misma franja */
 @media (max-width: 380px) {
+  .topbar-title h1 { font-size: 1.02rem; }
+  .month-picker .btn-icon { width: 30px; }
+}
+
+@media (max-width: 340px) {
   .kpi-grid-2,
   .kpi-grid-3,
   .kpi-grid-4 { grid-template-columns: 1fr; }
   .kpi-grid-3 > :last-child { grid-column: auto; }
   .filters-grid { grid-template-columns: 1fr; }
+}
+
+/* ---------- Pantallas táctiles: los atajos de teclado no tienen sentido ---------- */
+@media (hover: none) and (pointer: coarse) {
+  #shortcuts-btn,
+  .shortcuts-card { display: none; }
 }
 
 @keyframes sheetIn {

@@ -27,10 +27,10 @@ const Dashboard = (() => {
       <div class="banner">
         <span class="banner-icon">${Icons.get('sparkles', 20)}</span>
         <div class="grow">
-          <strong>Estás viendo datos de ejemplo</strong>
+          <strong><span class="label-long">Estás viendo datos de ejemplo</span><span class="label-short">Datos de ejemplo</span></strong>
           <p>Explora la aplicación con ellos y bórralos cuando quieras empezar con tus propios datos.</p>
         </div>
-        <button class="btn btn-sm btn-ghost" data-action="clear-demo">Borrar datos de ejemplo</button>
+        <button class="btn btn-sm btn-ghost" data-action="clear-demo"><span class="label-long">Borrar datos de ejemplo</span><span class="label-short">Borrar</span></button>
         <button class="btn-icon btn-icon-sm" data-action="hide-demo-banner" aria-label="Ocultar aviso">${Icons.get('x', 16)}</button>
       </div>`;
   }
@@ -41,7 +41,7 @@ const Dashboard = (() => {
     return `<div class="alerts">${alerts.map((a) => `
       <div class="alert alert-${a.level}" role="alert">
         ${Icons.get('alert', 18)}<span>${escapeHTML(a.message)}</span>
-        <a href="#/presupuestos" class="alert-link">Ver presupuestos</a>
+        <a href="#/presupuestos" class="alert-link"><span class="label-long">Ver presupuestos</span><span class="label-short">Ver</span></a>
       </div>`).join('')}</div>`;
   }
 

@@ -1441,6 +1441,60 @@ select {
 
 .shortcut-list li:last-child { border-bottom: 0; }
 
+/* Menú de acciones (hoja inferior en móvil) */
+.action-sheet:focus { outline: none; }
+
+.action-sheet-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 20px 20px 12px;
+}
+
+.action-sheet-header h2 {
+  overflow: hidden;
+  font-size: 1.05rem;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.action-sheet-header p {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 0.84rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.action-sheet-list {
+  display: flex;
+  flex-direction: column;
+  padding: 4px 12px 12px;
+}
+
+.action-sheet-item {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  min-height: 52px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 12px;
+  background: none;
+  font-size: 0.98rem;
+  font-weight: 600;
+  text-align: left;
+  transition: background-color 0.15s;
+}
+
+.action-sheet-item .icon { color: var(--text-muted); }
+.action-sheet-item:hover,
+.action-sheet-item:focus-visible { background: var(--surface-2); }
+.action-sheet-item.is-danger,
+.action-sheet-item.is-danger .icon { color: var(--expense); }
+
 /* Notificaciones (toasts) */
 .toast-container {
   position: fixed;
@@ -2965,8 +3019,12 @@ select {
   font-size: 0.66rem;
 }
 
-/* Botón flotante (solo móvil) */
-.fab {
+/* Elementos que solo existen en móvil (ver responsive.css) */
+.tabbar,
+.page-more,
+.td-actions .row-menu,
+.label-short,
+.month-short {
   display: none;
 }
 

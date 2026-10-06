@@ -223,7 +223,8 @@ Los registros de ejemplo llevan `demo: true`. Así se pueden borrar sin tocar lo
 - Cargar o borrar los datos de ejemplo y ver cuánto espacio ocupan los datos.
 
 **Experiencia de usuario**
-- Diseño responsive: sidebar en escritorio, menú desplegable en tablet y móvil, modales tipo *bottom sheet* en móvil, buscador plegable y botón flotante para añadir.
+- Diseño responsive: sidebar en escritorio y menú desplegable en tablet.
+- En móvil (≤ 768 px), como una app: barra de navegación inferior (Inicio, Movimientos, botón "+", Estadísticas y "Más", que abre el menú completo), cabecera compacta y fija con el selector de mes, buscador plegable, modales tipo *bottom sheet*, listas en formato tarjeta con un menú de acciones por fila y áreas táctiles de al menos 44×44 px. Respeta las zonas seguras del iPhone (notch y barra de inicio).
 - Modo claro y oscuro, que también se aplica a las gráficas.
 - Toasts (como máximo 3 a la vez), confirmaciones, estados vacíos, estado de carga y validaciones con mensajes bajo cada campo.
 - Las cantidades aceptan coma o punto decimal y separadores de miles, en cualquier idioma del navegador.

@@ -18,6 +18,12 @@ const App = (() => {
   };
   const VIEW_ORDER = Object.keys(VIEWS);
 
+  // Secciones con pestaña propia en la barra inferior (móvil); el resto se marca en "Más"
+  const TAB_VIEWS = ['dashboard', 'movimientos', 'estadisticas'];
+
+  // Punto de corte de móvil (el mismo que en responsive.css)
+  const mobileQuery = window.matchMedia('(max-width: 768px)');
+
   const state = {
     view: 'dashboard',
     month: Utils.currentMonthKey(),
@@ -85,12 +91,13 @@ const App = (() => {
     viewEl.classList.add('is-entering');
     clearTimeout(enteringTimer);
     enteringTimer = setTimeout(() => viewEl.classList.remove('is-entering'), 900);
-    $$('.nav-link').forEach((link) => {
+    $$('.nav-link, .tab-link[data-view]').forEach((link) => {
       const active = link.dataset.view === name;
       link.classList.toggle('is-active', active);
       if (active) link.setAttribute('aria-current', 'page');
       else link.removeAttribute('aria-current');
     });
+    $('#tab-more').classList.toggle('is-active', !TAB_VIEWS.includes(name));
     $('#view-title').textContent = VIEWS[name].title;
     $('#month-picker').classList.toggle('is-hidden', !VIEWS[name].month);
     document.title = `${VIEWS[name].title} · MyBudget`;
@@ -119,7 +126,10 @@ const App = (() => {
   function updateMonthLabel() {
     const isCurrent = state.month === Utils.currentMonthKey();
     const label = $('#month-label');
-    label.innerHTML = `${Icons.get('calendar', 16)}<span>${monthLabel(state.month)}</span>${isCurrent ? '' : '<small>Volver a hoy</small>'}`;
+    // En móvil se muestra la versión corta ("Oct 2026") para que quepa junto al título
+    label.innerHTML = `${Icons.get('calendar', 16)}<span class="month-long">${monthLabel(state.month)}</span>`
+      + `<span class="month-short">${monthLabel(state.month, true)} ${state.month.slice(0, 4)}</span>`
+      + `${isCurrent ? '' : '<small>Volver a hoy</small>'}`;
     label.classList.toggle('is-current', isCurrent);
   }
 
@@ -157,11 +167,13 @@ const App = (() => {
   function openSidebar() {
     document.body.classList.add('sidebar-open');
     $('#menu-toggle').setAttribute('aria-expanded', 'true');
+    $('#tab-more').setAttribute('aria-expanded', 'true');
   }
 
   function closeSidebar() {
     document.body.classList.remove('sidebar-open');
     $('#menu-toggle').setAttribute('aria-expanded', 'false');
+    $('#tab-more').setAttribute('aria-expanded', 'false');
   }
 
   /* ---------------------------------------------------------------
@@ -391,15 +403,18 @@ const App = (() => {
     $('#theme-toggle').addEventListener('click', toggleTheme);
     $('#shortcuts-btn').addEventListener('click', () => UI.openModal('shortcuts-modal'));
     $('#topbar-add').addEventListener('click', () => Transactions.openForm({ type: 'expense' }));
-    $('#fab').addEventListener('click', () => Transactions.openForm({ type: 'expense' }));
+    $('#tab-add').addEventListener('click', () => Transactions.openForm({ type: 'expense' }));
+    $('#tab-more').addEventListener('click', () => (document.body.classList.contains('sidebar-open') ? closeSidebar() : openSidebar()));
     window.addEventListener('hashchange', routeFromHash);
+    // Al pasar de escritorio a móvil (o al revés) se repinta: las gráficas usan opciones distintas
+    mobileQuery.addEventListener('change', render);
 
     routeFromHash();
 
     if (!storageAvailable()) {
       UI.toast('LocalStorage no está disponible: los cambios no se guardarán al cerrar el navegador.', 'warning', 8000);
     } else if (isFirstRun) {
-      UI.toast('¡Bienvenido! Hemos cargado datos de ejemplo para que explores la app.', 'info', 5000);
+      UI.toast('¡Bienvenido! Estos son datos de ejemplo', 'info', 4000);
     }
 
     // Ocultamos la pantalla de carga

@@ -214,7 +214,7 @@ const Settings = (() => {
         </div>
       </section>
 
-      <section class="card">
+      <section class="card shortcuts-card">
         <div class="card-header">
           <h2 class="card-title">${Icons.get('keyboard', 18)}Atajos de teclado</h2>
           <button class="btn btn-ghost btn-sm" data-action="show-shortcuts">Ver todos</button>

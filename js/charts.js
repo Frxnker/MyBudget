@@ -12,6 +12,16 @@ const Charts = (() => {
     return typeof Chart !== 'undefined';
   }
 
+  /** En móvil las gráficas usan etiquetas más cortas y nunca giran el eje X */
+  function isCompact() {
+    return window.matchMedia('(max-width: 768px)').matches;
+  }
+
+  /** Etiqueta de un mes en el eje X: "Oct 26" en escritorio y "Oct" en móvil */
+  function axisMonth(key) {
+    return isCompact() ? monthLabel(key, true) : `${monthLabel(key, true)} ${key.slice(2, 4)}`;
+  }
+
   /** Colores leídos de las variables CSS (cambian con el tema) */
   function colors() {
     const css = getComputedStyle(document.documentElement);
@@ -74,6 +84,7 @@ const Charts = (() => {
   }
 
   function baseOptions(c) {
+    const compact = isCompact();
     return {
       responsive: true,
       maintainAspectRatio: false,
@@ -82,16 +93,17 @@ const Charts = (() => {
       plugins: {
         legend: {
           position: 'bottom',
-          labels: { color: c.text2, usePointStyle: true, pointStyle: 'circle', boxWidth: 8, boxHeight: 8, padding: 18 },
+          labels: { color: c.text2, usePointStyle: true, pointStyle: 'circle', boxWidth: 8, boxHeight: 8, padding: compact ? 12 : 18 },
         },
         tooltip: { ...tooltipStyle(c), callbacks: { label: moneyTooltip } },
         hoverGuide: { color: c.guide, band: c.band },
       },
       scales: {
-        x: { grid: { display: false }, ticks: { color: c.muted, padding: 6 }, border: { display: false } },
+        // Sin rotación: si no caben todas las etiquetas, Chart.js omite algunas en lugar de girarlas
+        x: { grid: { display: false }, ticks: { color: c.muted, padding: 6, maxRotation: 0, autoSkipPadding: compact ? 8 : 4 }, border: { display: false } },
         y: {
           grid: { color: c.grid },
-          ticks: { color: c.muted, callback: moneyTick, maxTicksLimit: 6, padding: 8 },
+          ticks: { color: c.muted, callback: moneyTick, maxTicksLimit: compact ? 5 : 6, padding: compact ? 4 : 8 },
           border: { display: false },
           beginAtZero: true,
         },
@@ -238,7 +250,7 @@ const Charts = (() => {
     draw(id, {
       type: 'bar',
       data: {
-        labels: data.map((m) => `${monthLabel(m.key, true)} ${m.key.slice(2, 4)}`),
+        labels: data.map((m) => axisMonth(m.key)),
         datasets: [
           bar('Ingresos', data.map((m) => m.income), c.income),
           bar('Gastos', data.map((m) => m.expense), c.expense),
@@ -284,7 +296,7 @@ const Charts = (() => {
 
     draw(id, {
       type: 'line',
-      data: { labels: data.map((m) => `${monthLabel(m.key, true)} ${m.key.slice(2, 4)}`), datasets },
+      data: { labels: data.map((m) => axisMonth(m.key)), datasets },
       options,
     }, data.every((m) => m.count === 0));
   }
@@ -326,7 +338,7 @@ const Charts = (() => {
 
     const options = baseOptions(c);
     options.plugins.tooltip.callbacks.title = (items) => `${items[0].label} de ${monthLabel(key).toLowerCase()}`;
-    options.scales.x.ticks.maxTicksLimit = 16;
+    options.scales.x.ticks.maxTicksLimit = isCompact() ? 8 : 16;
 
     draw(id, {
       type: 'bar',

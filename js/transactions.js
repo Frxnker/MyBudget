@@ -296,9 +296,10 @@ const Transactions = (() => {
     const view = $('#view-movimientos');
     view.innerHTML = `
       <div class="page-actions">
-        <button class="btn btn-expense" data-action="add-expense">${Icons.get('arrowDownRight', 18)}Añadir gasto</button>
-        <button class="btn btn-income" data-action="add-income">${Icons.get('arrowUpRight', 18)}Añadir ingreso</button>
-        <button class="btn btn-ghost" data-action="export-csv-filtered" title="Exporta los movimientos que coinciden con los filtros">${Icons.get('download', 18)}Exportar CSV</button>
+        <button class="btn btn-expense" data-action="add-expense">${Icons.get('arrowDownRight', 18)}<span class="label-long">Añadir gasto</span><span class="label-short">Gasto</span></button>
+        <button class="btn btn-income" data-action="add-income">${Icons.get('arrowUpRight', 18)}<span class="label-long">Añadir ingreso</span><span class="label-short">Ingreso</span></button>
+        <button class="btn btn-ghost page-export" data-action="export-csv-filtered" title="Exporta los movimientos que coinciden con los filtros">${Icons.get('download', 18)}Exportar CSV</button>
+        <button class="btn-icon page-more" data-action="tx-page-menu" aria-label="Más opciones">${Icons.get('more', 20)}</button>
       </div>
 
       <div class="card filters-card">
@@ -462,19 +463,24 @@ const Transactions = (() => {
   }
 
   /** Fila de la tabla. Se reutiliza en otras vistas */
+  /** Fila de la tabla. En móvil (responsive.css) se convierte en una tarjeta de dos líneas */
   function rowHTML(t) {
     const category = Categories.get(t.categoryId);
     const sign = t.type === 'income' ? 1 : -1;
+    const id = escapeHTML(t.id);
+    const concept = escapeHTML(t.concept);
+    // En la línea de detalle de móvil, las fechas del año en curso se muestran sin el año
+    const shortDate = t.date.startsWith(String(new Date().getFullYear())) ? formatDate(t.date, 'dayMonth') : formatDate(t.date);
     return `
-      <tr>
+      <tr data-action="tx-row" data-id="${id}">
         <td data-label="Fecha" class="nowrap">${formatDate(t.date)}</td>
         <td data-label="Concepto" class="td-concept">
           <div class="concept-cell">
             ${UI.categoryBadge(category, 'sm')}
             <div>
-              <strong>${escapeHTML(t.concept)}</strong>
-              <small class="concept-meta">${formatDate(t.date)} · ${escapeHTML(t.method || '—')}</small>
-              ${t.notes ? `<small>${escapeHTML(t.notes)}</small>` : ''}
+              <strong>${concept}</strong>
+              <small class="concept-meta"><span class="cat-dot" style="--cat-color:${category.color}"></span>${escapeHTML(category.name)} · ${shortDate} · ${escapeHTML(t.method || '—')}</small>
+              ${t.notes ? `<small class="concept-notes">${escapeHTML(t.notes)}</small>` : ''}
             </div>
           </div>
         </td>
@@ -483,12 +489,32 @@ const Transactions = (() => {
         <td data-label="Método">${escapeHTML(t.method || '—')}</td>
         <td data-label="Cantidad" class="td-amount amount-${t.type}">${formatMoney(sign * t.amount, { sign: true })}</td>
         <td data-label="Acciones" class="td-actions">
-          <button class="btn-icon btn-icon-sm" data-action="edit-tx" data-id="${escapeHTML(t.id)}" title="Editar" aria-label="Editar ${escapeHTML(t.concept)}">${Icons.get('edit', 16)}</button>
-          <button class="btn-icon btn-icon-sm" data-action="duplicate-tx" data-id="${escapeHTML(t.id)}" title="Duplicar" aria-label="Duplicar ${escapeHTML(t.concept)}">${Icons.get('copy', 16)}</button>
-          <button class="btn-icon btn-icon-sm btn-icon-danger" data-action="delete-tx" data-id="${escapeHTML(t.id)}" title="Eliminar" aria-label="Eliminar ${escapeHTML(t.concept)}">${Icons.get('trash', 16)}</button>
+          <button class="btn-icon btn-icon-sm" data-action="edit-tx" data-id="${id}" title="Editar" aria-label="Editar ${concept}">${Icons.get('edit', 16)}</button>
+          <button class="btn-icon btn-icon-sm" data-action="duplicate-tx" data-id="${id}" title="Duplicar" aria-label="Duplicar ${concept}">${Icons.get('copy', 16)}</button>
+          <button class="btn-icon btn-icon-sm btn-icon-danger" data-action="delete-tx" data-id="${id}" title="Eliminar" aria-label="Eliminar ${concept}">${Icons.get('trash', 16)}</button>
+          <button class="btn-icon btn-icon-sm row-menu" data-action="tx-menu" data-id="${id}" aria-label="Acciones de ${concept}">${Icons.get('more', 18)}</button>
         </td>
       </tr>`;
   }
+
+  /** Menú de acciones de un movimiento (en móvil sustituye a los tres botones de la fila) */
+  function openRowMenu(id) {
+    const t = get(id);
+    if (!t) return;
+    const sign = t.type === 'income' ? 1 : -1;
+    UI.actionSheet({
+      title: t.concept,
+      subtitle: `${formatMoney(sign * t.amount, { sign: true })} · ${formatDate(t.date)} · ${t.method || '—'}`,
+      media: UI.categoryBadge(Categories.get(t.categoryId)),
+      items: [
+        { label: 'Editar', icon: 'edit', action: 'edit-tx', id },
+        { label: 'Duplicar', icon: 'copy', action: 'duplicate-tx', id },
+        { label: 'Eliminar', icon: 'trash', action: 'delete-tx', id, danger: true },
+      ],
+    });
+  }
+
+  const isMobile = () => window.matchMedia('(max-width: 768px)').matches;
 
   function renderResults() {
     const list = filtered();
@@ -560,6 +586,14 @@ const Transactions = (() => {
     'duplicate-tx': (id) => openForm({ duplicateOf: id }),
     'delete-tx': (id) => remove(id),
     'clear-filters': () => { setSearch(''); renderResults(); },
+    'tx-menu': (id) => openRowMenu(id),
+    // En móvil, tocar una fila abre su menú de acciones; en escritorio no hace nada (hay botones)
+    'tx-row': (id) => { if (isMobile()) openRowMenu(id); },
+    'tx-page-menu': () => UI.actionSheet({
+      title: 'Movimientos',
+      subtitle: 'Se exportan los movimientos que coinciden con los filtros',
+      items: [{ label: 'Exportar CSV', icon: 'download', action: 'export-csv-filtered' }],
+    }),
     'export-csv-filtered': () => exportCSV(filtered(), `mybudget-movimientos-${Utils.todayISO()}.csv`),
     'export-csv-all': () => exportCSV(all(), `mybudget-movimientos-${Utils.todayISO()}.csv`),
   };
