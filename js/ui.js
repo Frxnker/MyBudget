@@ -11,7 +11,10 @@ const UI = (() => {
    * ------------------------------------------------------------- */
   const TOAST_ICONS = { success: 'check', error: 'alert', warning: 'alert', info: 'info' };
 
-  function toast(message, type = 'success', duration = 3200) {
+  /**
+   * Muestra una notificación. "action" es opcional: { label: 'Deshacer', onClick: () => {...} }
+   */
+  function toast(message, type = 'success', duration = 3200, action = null) {
     const container = $('#toast-container');
     const el = document.createElement('div');
     el.className = `toast toast-${type}`;
@@ -19,14 +22,24 @@ const UI = (() => {
     el.innerHTML = `
       <span class="toast-icon">${Icons.get(TOAST_ICONS[type] || 'info', 18)}</span>
       <span class="toast-message">${escapeHTML(message)}</span>
+      ${action ? `<button class="toast-action">${escapeHTML(action.label)}</button>` : ''}
       <button class="toast-close" aria-label="Cerrar notificación">${Icons.get('x', 16)}</button>`;
     container.appendChild(el);
 
+    let removed = false;
     const remove = () => {
+      if (removed) return;
+      removed = true;
       el.classList.add('is-leaving');
       el.addEventListener('animationend', () => el.remove(), { once: true });
     };
     el.querySelector('.toast-close').addEventListener('click', remove);
+    if (action) {
+      el.querySelector('.toast-action').addEventListener('click', () => {
+        action.onClick();
+        remove();
+      });
+    }
     setTimeout(remove, duration);
   }
 

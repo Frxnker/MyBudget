@@ -3,7 +3,7 @@
 Aplicación web para controlar ingresos, gastos, presupuestos, gastos recurrentes y objetivos de ahorro.
 Funciona **completamente en el navegador**: sin backend, sin servidor y sin base de datos. Los datos se guardan en **LocalStorage**.
 
-Proyecto de DAW hecho con HTML5, CSS3 y JavaScript vanilla. Las gráficas usan [Chart.js](https://www.chartjs.org/), que se carga desde un CDN.
+Proyecto de DAW hecho con HTML5, CSS3 y JavaScript vanilla. Las gráficas usan [Chart.js](https://www.chartjs.org/) (licencia MIT), incluido en el proyecto en `js/vendor/`, así que funcionan sin conexión.
 
 ---
 
@@ -14,7 +14,7 @@ Proyecto de DAW hecho con HTML5, CSS3 y JavaScript vanilla. Las gráficas usan [
 
 No hace falta instalar nada. La primera vez se cargan datos de ejemplo para que el dashboard no aparezca vacío. Puedes borrarlos desde el aviso del dashboard o desde **Configuración → Datos de ejemplo**.
 
-> Las gráficas necesitan conexión a Internet para descargar Chart.js. Sin conexión la app sigue funcionando y en el lugar de cada gráfica aparece un aviso.
+> Sin conexión todo sigue funcionando, gráficas incluidas. Lo único que se carga de Internet es la fuente Plus Jakarta Sans; si no está disponible, se usa la fuente del sistema.
 > Si prefieres servirla con un servidor local: `npx serve .` o la extensión *Live Server* de VS Code.
 
 ---
@@ -47,7 +47,9 @@ MyBudget/
     ├── dashboard.js         # Vista del dashboard
     ├── settings.js          # Vista de "Configuración" (exportar, importar, borrar)
     ├── demo.js              # Datos de ejemplo
-    └── app.js               # Inicio, navegación SPA, tema, buscador y atajos
+    ├── app.js               # Inicio, navegación SPA, tema, buscador y atajos
+    └── vendor/
+        └── chart.umd.min.js # Chart.js 4.4.1 (librería externa, licencia MIT)
 ```
 
 ---
@@ -113,10 +115,11 @@ Los registros de ejemplo llevan `demo: true`. Así se pueden borrar sin tocar lo
 - Botones de "Añadir gasto" y "Añadir ingreso".
 
 **Movimientos**
-- Alta, edición, duplicado y borrado (con confirmación) de gastos e ingresos.
+- Alta, edición, duplicado y borrado (con confirmación) de gastos e ingresos. Tras borrar, el toast permite **deshacer**.
 - Filtros automáticos por texto, tipo, categoría, método y rango de fechas.
 - Orden por fecha, cantidad o categoría, desde las cabeceras de la tabla o desde un selector.
 - Totales de los resultados filtrados y botón "Mostrar más".
+- Exportación a **CSV** de los movimientos filtrados, preparada para Excel en español (separador `;`, coma decimal y UTF-8 con BOM).
 - En móvil, la tabla se muestra como tarjetas y los filtros se pueden plegar.
 
 **Categorías**
@@ -147,6 +150,7 @@ Los registros de ejemplo llevan `demo: true`. Así se pueden borrar sin tocar lo
 **Configuración**
 - Nombre para el saludo del dashboard y tema claro u oscuro.
 - Exportar a `.json`, importar (con validación y confirmación) y borrar todos los datos (con confirmación).
+- Exportar todos los movimientos a CSV.
 - Cargar o borrar los datos de ejemplo y ver cuánto espacio ocupan los datos.
 
 **Experiencia de usuario**
@@ -161,13 +165,12 @@ Los registros de ejemplo llevan `demo: true`. Así se pueden borrar sin tocar lo
 
 ## Posibles mejoras futuras
 
-- Gráficas sin conexión: incluir `chart.umd.min.js` en el proyecto en lugar de cargarlo desde un CDN.
 - Convertir la app en PWA (manifest y *service worker*) para instalarla y usarla sin conexión.
 - Registrar automáticamente los pagos recurrentes vencidos, preguntando antes al usuario.
 - Presupuestos distintos para cada mes y traspaso del sobrante al mes siguiente.
 - Varias cuentas o carteras (banco, efectivo, tarjeta) con traspasos entre ellas.
-- Exportar e importar CSV para usar los datos en hojas de cálculo.
+- Importar movimientos desde un CSV, por ejemplo el extracto del banco.
 - Gráficas comparativas entre años e informe en PDF.
-- Deshacer el último borrado desde el propio toast.
+- Deshacer también al borrar objetivos, recurrentes y límites.
 - Tests automáticos de los cálculos de `statistics.js` y `utils.js`.
 - Sincronizar entre dispositivos con un backend opcional.

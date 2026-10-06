@@ -62,7 +62,46 @@ const Transactions = (() => {
     });
     if (!ok) return;
     Store.set('transactions', all().filter((t) => t.id !== id));
-    UI.toast(`${TYPES[tx.type]} eliminado`, 'info');
+    UI.toast(`${TYPES[tx.type]} eliminado`, 'info', 6000, {
+      label: 'Deshacer',
+      onClick: () => {
+        if (get(id)) return;
+        Store.set('transactions', [...all(), tx]);
+        UI.toast(`"${tx.concept}" restaurado`);
+      },
+    });
+  }
+
+  /* ---------------------------------------------------------------
+   * EXPORTAR A CSV (separador ";" y coma decimal para Excel en español)
+   * ------------------------------------------------------------- */
+
+  function csvField(value) {
+    let text = String(value ?? '');
+    // Evita que Excel interprete el texto como una fórmula
+    if (/^[=+\-@]/.test(text)) text = `'${text}`;
+    return /[;"\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+  }
+
+  function exportCSV(list, filename) {
+    if (!list.length) {
+      UI.toast('No hay movimientos que exportar', 'warning');
+      return;
+    }
+    const header = ['Fecha', 'Tipo', 'Concepto', 'Categoría', 'Método', 'Cantidad (€)', 'Notas'];
+    const rows = applySort(list, { field: 'date', dir: 'asc' }).map((t) => [
+      t.date,
+      TYPES[t.type],
+      csvField(t.concept),
+      csvField(Categories.get(t.categoryId).name),
+      csvField(t.method),
+      // La cantidad se escribe sin pasar por csvField para conservar el signo
+      ((t.type === 'income' ? 1 : -1) * t.amount / 100).toFixed(2).replace('.', ','),
+      csvField(t.notes),
+    ].join(';'));
+    // El BOM ("﻿") hace que Excel reconozca las tildes en UTF-8
+    Utils.downloadFile(filename, `﻿${[header.join(';'), ...rows].join('\r\n')}`, 'text/csv;charset=utf-8');
+    UI.toast(`${list.length} movimientos exportados a CSV`);
   }
 
   /* ---------------------------------------------------------------
@@ -230,6 +269,7 @@ const Transactions = (() => {
       <div class="page-actions">
         <button class="btn btn-expense" data-action="add-expense">${Icons.get('arrowDownRight', 18)}Añadir gasto</button>
         <button class="btn btn-income" data-action="add-income">${Icons.get('arrowUpRight', 18)}Añadir ingreso</button>
+        <button class="btn btn-ghost" data-action="export-csv-filtered" title="Exporta los movimientos que coinciden con los filtros">${Icons.get('download', 18)}Exportar CSV</button>
       </div>
 
       <div class="card filters-card">
@@ -272,12 +312,12 @@ const Transactions = (() => {
           <div class="field field-sort">
             <label for="filter-sort">Ordenar por</label>
             <select id="filter-sort">
-              <option value="date-desc">Fecha (recientes primero)</option>
-              <option value="date-asc">Fecha (antiguos primero)</option>
-              <option value="amount-desc">Cantidad (mayor a menor)</option>
-              <option value="amount-asc">Cantidad (menor a mayor)</option>
-              <option value="category-asc">Categoría (A-Z)</option>
-              <option value="category-desc">Categoría (Z-A)</option>
+              <option value="date-desc">Más recientes</option>
+              <option value="date-asc">Más antiguos</option>
+              <option value="amount-desc">Mayor cantidad</option>
+              <option value="amount-asc">Menor cantidad</option>
+              <option value="category-asc">Categoría A-Z</option>
+              <option value="category-desc">Categoría Z-A</option>
             </select>
           </div>
         </div>
@@ -486,6 +526,8 @@ const Transactions = (() => {
     'duplicate-tx': (id) => openForm({ duplicateOf: id }),
     'delete-tx': (id) => remove(id),
     'clear-filters': () => { setSearch(''); renderResults(); },
+    'export-csv-filtered': () => exportCSV(filtered(), `mybudget-movimientos-${Utils.todayISO()}.csv`),
+    'export-csv-all': () => exportCSV(all(), `mybudget-movimientos-${Utils.todayISO()}.csv`),
   };
 
   function init() {

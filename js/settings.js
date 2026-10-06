@@ -181,6 +181,13 @@ const Settings = (() => {
           </div>
           <div class="data-action">
             <div>
+              <h3>Exportar movimientos a CSV</h3>
+              <p class="muted">Abre tus movimientos en Excel, LibreOffice o Google Sheets.</p>
+            </div>
+            <button class="btn btn-ghost" data-action="export-csv-all">${Icons.get('download', 18)}Exportar CSV</button>
+          </div>
+          <div class="data-action">
+            <div>
               <h3>Importar datos</h3>
               <p class="muted">Recupera una copia exportada anteriormente (.json).</p>
             </div>

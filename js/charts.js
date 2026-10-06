@@ -1,7 +1,7 @@
 /**
  * charts.js
  * Gráficas con Chart.js usando siempre los datos reales guardados.
- * Si Chart.js no está disponible (sin conexión), se muestra un aviso y la app sigue funcionando.
+ * Si Chart.js no se pudiera cargar, se muestra un aviso y la app sigue funcionando.
  */
 const Charts = (() => {
   const { formatMoney, monthLabel, centsToEuros } = Utils;
@@ -64,7 +64,7 @@ const Charts = (() => {
     const canvas = document.getElementById(id);
     if (!canvas) return;
     if (!available()) {
-      setEmpty(canvas, true, 'No se han podido cargar las gráficas (Chart.js necesita conexión a Internet).');
+      setEmpty(canvas, true, 'No se ha podido cargar la librería de gráficas (js/vendor/chart.umd.min.js).');
       return;
     }
     setEmpty(canvas, isEmpty);
