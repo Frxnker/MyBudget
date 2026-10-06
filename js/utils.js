@@ -23,16 +23,22 @@ const Utils = (() => {
     let str = String(value ?? '').trim().replace(/[\s€ ]/g, '');
     if (!str) return NaN;
 
+    // Los separadores de miles solo son válidos en grupos de 3 cifras: "1.250.000", no "1.2.3"
+    const isGrouped = (integer, sep) => new RegExp(`^-?\\d{1,3}(\\${sep}\\d{3})+$`).test(integer);
+
     const lastComma = str.lastIndexOf(',');
     const lastDot = str.lastIndexOf('.');
     if (lastComma > -1 && lastDot > -1) {
       // El último separador es el decimal; el otro es de miles
-      str = lastComma > lastDot
-        ? str.replace(/\./g, '').replace(',', '.')
-        : str.replace(/,/g, '');
+      const pos = Math.max(lastComma, lastDot);
+      const thousandsSep = lastComma > lastDot ? '.' : ',';
+      const integer = str.slice(0, pos);
+      if (!isGrouped(integer, thousandsSep)) return NaN;
+      str = `${integer.split(thousandsSep).join('')}.${str.slice(pos + 1)}`;
     } else if (lastComma > -1) {
-      str = str.replace(',', '.');
+      str = str.replace(',', '.'); // si hay más de una coma, la comprobación final lo rechaza
     } else if ((str.match(/\./g) || []).length > 1 || /^-?\d{1,3}\.\d{3}$/.test(str)) {
+      if (!isGrouped(str, '.')) return NaN;
       str = str.replace(/\./g, ''); // "1.250.000" o "2.000" → miles
     }
 
