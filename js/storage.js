@@ -3,7 +3,7 @@
  * Única capa que habla con LocalStorage. El resto de módulos usa Store.get() / Store.set().
  *
  * Estructura en LocalStorage (cada colección en su propia clave):
- *   gestorGastos.transactions → [{ id, type, concept, amount, categoryId, date, method, notes, createdAt }]
+ *   gestorGastos.transactions → [{ id, type, concept, amount, categoryId, date, method, notes, createdAt, recurringId? }]
  *   gestorGastos.categories   → [{ id, name, icon, type, color, custom }]
  *   gestorGastos.budgets      → { monthly, byCategory: { [categoryId]: cents } }
  *   gestorGastos.recurring    → [{ id, name, amount, categoryId, day, frequency, startMonth, method, active }]
@@ -89,6 +89,8 @@ const Store = (() => {
         method: isText(t.method) ? t.method : '',
         notes: isText(t.notes) ? t.notes.slice(0, 300) : '',
         createdAt: Number(t.createdAt) || Date.now(),
+        // Enlace al gasto recurrente desde el que se registró el pago (opcional)
+        ...(isValidId(t.recurringId) ? { recurringId: t.recurringId } : {}),
         ...(t.demo ? { demo: true } : {}),
       }))),
 
