@@ -640,6 +640,15 @@
   .year-table td:first-child::before { content: none; }
   .year-table tfoot tr { background: var(--surface-2); }
 
+  /* Los meses sin movimientos ocupan una sola línea en lugar de cuatro importes a cero */
+  .year-table tr.is-empty-row td:not(:first-child) { display: none; }
+
+  .year-table tr.is-empty-row td:first-child::after {
+    content: 'Sin movimientos';
+    color: var(--text-muted);
+    font-weight: 500;
+  }
+
   /* --- Configuración y otros --- */
   .data-action,
   .danger-zone {
@@ -670,8 +679,16 @@
   .modal-body,
   .modal-footer { padding-left: 18px; padding-right: 18px; }
 
-  /* La hoja inferior no queda pegada a la barra de inicio del iPhone */
-  .modal-footer { padding-bottom: calc(20px + env(safe-area-inset-bottom, 0px)); }
+  /*
+   * Los botones de la hoja quedan siempre a la vista aunque el formulario sea largo,
+   * y no se pegan a la barra de inicio del iPhone
+   */
+  .modal-footer {
+    position: sticky;
+    bottom: 0;
+    z-index: 1;
+    padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  }
 
   .modal-footer .btn { flex: 1; }
 
