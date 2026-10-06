@@ -64,20 +64,27 @@ const Utils = (() => {
   }
 
   /**
+   * Descompone una cantidad para poder mostrarla por partes:
+   * 125050 → { sign: '', integer: '1.250', decimals: '50' }. Con decimals = false se redondea a euros.
+   */
+  function moneyParts(cents, { sign = false, decimals = true } = {}) {
+    const value = Math.round(Number(cents) || 0);
+    const abs = Math.abs(value);
+    const euros = decimals ? Math.floor(abs / 100) : Math.round(abs / 100);
+    return {
+      sign: value < 0 ? '-' : (sign && value > 0 ? '+' : ''),
+      integer: String(euros).replace(/\B(?=(\d{3})+(?!\d))/g, '.'),
+      decimals: decimals ? String(abs % 100).padStart(2, '0') : '',
+    };
+  }
+
+  /**
    * Formatea céntimos con formato español: 125050 → "1.250,50 €".
    * No usamos Intl porque en es-ES no agrupa los números de 4 cifras (1250,50 €).
    */
-  function formatMoney(cents, { sign = false, decimals = true } = {}) {
-    const value = Math.round(Number(cents) || 0);
-    const abs = Math.abs(value);
-    let euros = Math.floor(abs / 100);
-    let dec = String(abs % 100).padStart(2, '0');
-    if (!decimals) {
-      euros = Math.round(abs / 100);
-    }
-    const intStr = String(euros).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
-    const prefix = value < 0 ? '-' : (sign && value > 0 ? '+' : '');
-    return `${prefix}${intStr}${decimals ? ',' + dec : ''} €`;
+  function formatMoney(cents, options = {}) {
+    const p = moneyParts(cents, options);
+    return `${p.sign}${p.integer}${p.decimals ? `,${p.decimals}` : ''} €`;
   }
 
   /** Formatea un porcentaje: 42.5 → "42,5 %" */
@@ -251,7 +258,7 @@ const Utils = (() => {
   }
 
   return {
-    toCents, centsToInput, centsToEuros, formatMoney, formatPercent, percent,
+    toCents, centsToInput, centsToEuros, moneyParts, formatMoney, formatPercent, percent,
     toISODate, todayISO, parseISODate, isValidISODate, isValidMonthKey, formatDate,
     monthKey, currentMonthKey, addMonths, monthDiff, daysInMonth, monthLabel, daysUntil, relativeDays,
     $, $$, escapeHTML, uid, capitalize, normalize, debounce, sumBy, clamp, downloadFile,

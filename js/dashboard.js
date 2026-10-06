@@ -12,16 +12,12 @@ const Dashboard = (() => {
     return name ? `${text}, ${escapeHTML(name)}` : text;
   }
 
-  function kpi({ label, value, icon, tone, trend = '', foot = '' }) {
+  /** Título de tarjeta con icono y enlace opcional */
+  function cardHeader(icon, title, link = '') {
     return `
-      <div class="kpi kpi-${tone}">
-        <div class="kpi-top">
-          <span class="kpi-label">${label}</span>
-          <span class="kpi-icon">${Icons.get(icon, 18)}</span>
-        </div>
-        <strong class="kpi-value">${value}</strong>
-        ${foot}
-        ${trend}
+      <div class="card-header">
+        <h2 class="card-title">${Icons.get(icon, 18)}${title}</h2>
+        ${link}
       </div>`;
   }
 
@@ -34,7 +30,7 @@ const Dashboard = (() => {
           <strong>Estás viendo datos de ejemplo</strong>
           <p>Explora la aplicación con ellos y bórralos cuando quieras empezar con tus propios datos.</p>
         </div>
-        <button class="btn btn-sm btn-light" data-action="clear-demo">Borrar datos de ejemplo</button>
+        <button class="btn btn-sm btn-ghost" data-action="clear-demo">Borrar datos de ejemplo</button>
         <button class="btn-icon btn-icon-sm" data-action="hide-demo-banner" aria-label="Ocultar aviso">${Icons.get('x', 16)}</button>
       </div>`;
   }
@@ -49,11 +45,75 @@ const Dashboard = (() => {
       </div>`).join('')}</div>`;
   }
 
+  /** Tarjeta principal: saldo, variación del mes y evolución del saldo */
+  function heroHTML() {
+    const balance = Stats.balance();
+    const history = Stats.balanceHistory(6);
+    const delta = history[history.length - 1].balance - history[history.length - 2].balance;
+    const hasData = Transactions.all().length > 0;
+
+    return `
+      <section class="hero-card">
+        <div class="hero-top">
+          <div>
+            <p class="hero-greeting">${greeting()}</p>
+            <p class="hero-date">${formatDate(Utils.todayISO(), 'long')}</p>
+          </div>
+          <img class="hero-logo" src="assets/icons/logo.svg" alt="" width="34" height="34">
+        </div>
+
+        <div class="hero-body">
+          <span class="hero-label">Saldo actual</span>
+          <strong class="hero-balance ${balance < 0 ? 'is-negative' : ''}">${UI.money(balance)}</strong>
+          ${hasData ? `
+            <span class="hero-delta ${delta >= 0 ? 'is-up' : 'is-down'}">
+              ${Icons.get(delta >= 0 ? 'arrowUp' : 'arrowDown', 14)}${formatMoney(delta, { sign: true })} este mes
+            </span>` : '<span class="hero-delta">Añade tu primer movimiento para empezar</span>'}
+        </div>
+
+        ${hasData ? `
+          <div class="hero-spark">
+            ${UI.sparkline(history.map((h) => h.balance), { label: 'Evolución del saldo en los últimos 6 meses' })}
+            <div class="hero-spark-axis">
+              <span>${monthLabel(history[0].key, true)}</span>
+              <span>Hoy</span>
+            </div>
+          </div>` : ''}
+
+        <div class="hero-actions">
+          <button class="btn btn-hero" data-action="add-expense">${Icons.get('arrowDownRight', 18)}Añadir gasto</button>
+          <button class="btn btn-hero-ghost" data-action="add-income">${Icons.get('arrowUpRight', 18)}Añadir ingreso</button>
+        </div>
+      </section>`;
+  }
+
+  function kpisHTML(key) {
+    const summary = Stats.monthSummary(key);
+    const trends = Stats.monthTrends(key);
+    const rateLevel = summary.rate >= 20 ? 'goal' : summary.rate >= 0 ? 'warn' : 'over';
+    const rateTrend = trends.rate === null ? ''
+      : `<span class="trend ${trends.rate >= 0 ? 'trend-good' : 'trend-bad'}">
+          <span class="trend-chip">${Icons.get(trends.rate >= 0 ? 'arrowUp' : 'arrowDown', 12)}${formatPercent(Math.abs(trends.rate))}</span>
+          <span class="trend-text">puntos vs. mes anterior</span>
+        </span>`;
+
+    return `
+      <div class="kpi-grid kpi-grid-2">
+        ${UI.kpi({ label: 'Ingresos', value: UI.money(summary.income), icon: 'arrowUpRight', tone: 'income', foot: UI.trendBadge(trends.income, true) })}
+        ${UI.kpi({ label: 'Gastos', value: UI.money(summary.expense), icon: 'arrowDownRight', tone: 'expense', foot: UI.trendBadge(trends.expense, false) })}
+        ${UI.kpi({ label: 'Ahorro del mes', value: UI.money(summary.savings), icon: 'coins', tone: 'savings', foot: UI.trendBadge(trends.savings, true) })}
+        ${UI.kpi({
+          label: 'Tasa de ahorro',
+          value: formatPercent(summary.rate),
+          icon: 'pie',
+          tone: 'rate',
+          foot: `${UI.progressBar(Math.max(summary.rate, 0), rateLevel, 'Porcentaje de ahorro')}${rateTrend}`,
+        })}
+      </div>`;
+  }
+
   function recentHTML() {
-    const recent = Transactions.all()
-      .slice()
-      .sort((a, b) => b.date.localeCompare(a.date) || b.createdAt - a.createdAt)
-      .slice(0, 6);
+    const recent = Transactions.recent(6);
     if (!recent.length) {
       return UI.emptyState({
         icon: 'inbox', title: 'Sin movimientos',
@@ -70,9 +130,9 @@ const Dashboard = (() => {
             ${UI.categoryBadge(category)}
             <span class="grow">
               <strong>${escapeHTML(t.concept)}</strong>
-              <small class="muted">${escapeHTML(category.name)} · ${formatDate(t.date)}</small>
+              <small>${escapeHTML(category.name)} · ${formatDate(t.date)}</small>
             </span>
-            <strong class="amount-${t.type}">${formatMoney(sign * t.amount, { sign: true })}</strong>
+            <strong class="tx-list-amount amount-${t.type}">${formatMoney(sign * t.amount, { sign: true })}</strong>
           </button>
         </li>`;
     }).join('')}</ul>`;
@@ -88,15 +148,16 @@ const Dashboard = (() => {
         action: '<a class="btn btn-primary btn-sm" href="#/presupuestos">Crear presupuesto</a>',
       });
     }
+    const pace = Budget.idealPace(key, s.limit);
     return `
       ${s.limit ? `
         <div class="budget-mini">
           <div class="budget-mini-top">
-            <span>${formatMoney(s.spent)} <span class="muted">de ${formatMoney(s.limit)}</span></span>
-            <strong class="status-text-${s.level}">${formatPercent(s.pct, 0)}</strong>
+            <span><strong>${formatMoney(s.spent)}</strong> <span class="muted">de ${formatMoney(s.limit)}</span></span>
+            <span class="status-pill status-${s.level}">${formatPercent(s.pct, 0)}</span>
           </div>
-          ${UI.progressBar(s.pct, s.level, 'Presupuesto mensual')}
-          <small class="muted">${s.available >= 0 ? `Te quedan ${formatMoney(s.available)}` : `Te has pasado ${formatMoney(-s.available)}`}</small>
+          ${UI.progressBar(s.pct, s.level, 'Presupuesto mensual', pace ? { marker: pace.pct, markerLabel: `Ritmo ideal hoy: ${formatMoney(pace.amount)}` } : {})}
+          <small class="muted">${s.available >= 0 ? `Te quedan ${formatMoney(s.available)}` : `Te has pasado ${formatMoney(-s.available)}`}${pace ? ` · ritmo ideal hoy ${formatMoney(pace.amount)}` : ''}</small>
         </div>` : ''}
       ${categories.length ? `<ul class="budget-mini-list">${categories.map((c) => `
         <li>
@@ -132,76 +193,49 @@ const Dashboard = (() => {
     return `<ul class="goal-mini-list">${goals.map(Goals.miniHTML).join('')}</ul>`;
   }
 
+  /** Categorías con más gasto del mes, con su peso y la variación respecto al mes anterior */
   function topCategoriesHTML(key) {
     const top = Stats.topCategories(key, 5);
     if (!top.length) return '<p class="muted">No hay gastos este mes.</p>';
-    return `<ol class="rank-list">${top.map((c, i) => `
+    return `<ol class="rank-list">${top.map((c) => `
       <li>
-        <span class="rank-pos">${i + 1}</span>
         ${UI.categoryBadge(c.category, 'sm')}
-        <span class="grow">
-          <strong>${escapeHTML(c.category.name)}</strong>
-          <small class="muted">${formatPercent(c.pct, 0)} del gasto</small>
-        </span>
-        <span class="rank-value">
-          <strong>${formatMoney(c.total)}</strong>
-          ${c.change === null
-            ? '<small class="muted">Nuevo este mes</small>'
-            : `<small class="${c.change > 0 ? 'text-danger' : 'text-success'}">${c.change > 0 ? '▲' : '▼'} ${formatPercent(Math.abs(c.change), 0)}</small>`}
-        </span>
+        <div class="grow">
+          <div class="rank-top">
+            <strong>${escapeHTML(c.category.name)}</strong>
+            <strong class="rank-value">${formatMoney(c.total)}</strong>
+          </div>
+          <div class="rank-bar"><span style="width:${c.pct.toFixed(1)}%;background:${c.category.color}"></span></div>
+          <div class="rank-bottom">
+            <small>${formatPercent(c.pct, 0)} del gasto</small>
+            ${c.change === null
+              ? '<small>Nuevo este mes</small>'
+              : `<small class="${c.change > 0 ? 'text-danger' : 'text-success'}">${c.change > 0 ? '▲' : '▼'} ${formatPercent(Math.abs(c.change), 0)}</small>`}
+          </div>
+        </div>
       </li>`).join('')}</ol>`;
   }
 
   function render(key) {
     const view = $('#view-dashboard');
-    const summary = Stats.monthSummary(key);
-    const trends = Stats.monthTrends(key);
-    const balance = Stats.balance();
-    const label = monthLabel(key);
+    const month = monthLabel(key).split(' ')[0].toLowerCase();
 
     view.innerHTML = `
       ${demoBannerHTML()}
       ${alertsHTML(key)}
 
       <div class="dashboard-top">
-        <section class="hero-card">
-          <p class="hero-greeting">${greeting()} 👋</p>
-          <span class="hero-label">Saldo actual</span>
-          <strong class="hero-balance ${balance < 0 ? 'is-negative' : ''}">${formatMoney(balance)}</strong>
-          <p class="hero-note">Balance acumulado de todos tus movimientos hasta hoy</p>
-          <div class="hero-actions">
-            <button class="btn btn-hero" data-action="add-expense">${Icons.get('arrowDownRight', 18)}Añadir gasto</button>
-            <button class="btn btn-hero-ghost" data-action="add-income">${Icons.get('arrowUpRight', 18)}Añadir ingreso</button>
-          </div>
-        </section>
-
-        <div class="kpi-grid kpi-grid-2">
-          ${kpi({ label: `Ingresos · ${label}`, value: formatMoney(summary.income), icon: 'arrowUpRight', tone: 'income', trend: UI.trendBadge(trends.income, true) })}
-          ${kpi({ label: `Gastos · ${label}`, value: formatMoney(summary.expense), icon: 'arrowDownRight', tone: 'expense', trend: UI.trendBadge(trends.expense, false) })}
-          ${kpi({ label: 'Ahorro del mes', value: formatMoney(summary.savings), icon: 'coins', tone: 'savings', trend: UI.trendBadge(trends.savings, true) })}
-          ${kpi({
-            label: 'Porcentaje de ahorro',
-            value: formatPercent(summary.rate),
-            icon: 'pie',
-            tone: 'rate',
-            foot: UI.progressBar(Math.max(summary.rate, 0), summary.rate >= 20 ? 'goal' : summary.rate >= 0 ? 'warn' : 'over', 'Porcentaje de ahorro'),
-            trend: trends.rate === null ? '' : `<span class="trend ${trends.rate >= 0 ? 'trend-good' : 'trend-bad'}">${trends.rate >= 0 ? '+' : ''}${formatPercent(trends.rate)} <span class="muted">puntos vs. mes anterior</span></span>`,
-          })}
-        </div>
+        ${heroHTML()}
+        ${kpisHTML(key)}
       </div>
 
       <div class="grid grid-2-1">
-        <section class="card">
-          <div class="card-header">
-            <h2 class="card-title">${Icons.get('chart', 18)}Evolución de los últimos 6 meses</h2>
-            <a href="#/estadisticas" class="link">Ver estadísticas</a>
-          </div>
-          <div class="chart-box chart-md"><canvas id="dash-evolution" aria-label="Gráfica de evolución de ingresos y gastos" role="img"></canvas></div>
+        <section class="card card-chart">
+          ${cardHeader('chart', 'Ingresos y gastos', '<a href="#/estadisticas" class="link">Ver estadísticas</a>')}
+          <div class="chart-box chart-md"><canvas id="dash-evolution" aria-label="Ingresos y gastos de los últimos 6 meses" role="img"></canvas></div>
         </section>
         <section class="card">
-          <div class="card-header">
-            <h2 class="card-title">${Icons.get('pie', 18)}Gastos por categoría</h2>
-          </div>
+          ${cardHeader('pie', `Gastos de ${month}`)}
           <div class="chart-box chart-doughnut">
             <canvas id="dash-categories" aria-label="Gráfica de gastos por categoría" role="img"></canvas>
             <div class="doughnut-center" id="dash-categories-total"></div>
@@ -212,45 +246,31 @@ const Dashboard = (() => {
 
       <div class="grid grid-2-1">
         <section class="card">
-          <div class="card-header">
-            <h2 class="card-title">${Icons.get('wallet', 18)}Últimos movimientos</h2>
-            <a href="#/movimientos" class="link">Ver todos</a>
-          </div>
+          ${cardHeader('wallet', 'Últimos movimientos', '<a href="#/movimientos" class="link">Ver todos</a>')}
           ${recentHTML()}
         </section>
         <section class="card">
-          <div class="card-header">
-            <h2 class="card-title">${Icons.get('clock', 18)}Próximos pagos</h2>
-            <a href="#/recurrentes" class="link">Gestionar</a>
-          </div>
+          ${cardHeader('clock', 'Próximos pagos', '<a href="#/recurrentes" class="link">Gestionar</a>')}
           ${upcomingHTML()}
         </section>
       </div>
 
       <div class="grid grid-3">
         <section class="card">
-          <div class="card-header">
-            <h2 class="card-title">${Icons.get('pie', 18)}Presupuesto de ${label.split(' ')[0].toLowerCase()}</h2>
-            <a href="#/presupuestos" class="link">Detalles</a>
-          </div>
+          ${cardHeader('pie', `Presupuesto de ${month}`, '<a href="#/presupuestos" class="link">Detalles</a>')}
           ${budgetHTML(key)}
         </section>
         <section class="card">
-          <div class="card-header">
-            <h2 class="card-title">${Icons.get('trendUp', 18)}Dónde más gastas</h2>
-          </div>
+          ${cardHeader('trendUp', 'Dónde más gastas')}
           ${topCategoriesHTML(key)}
         </section>
         <section class="card">
-          <div class="card-header">
-            <h2 class="card-title">${Icons.get('target', 18)}Objetivos de ahorro</h2>
-            <a href="#/objetivos" class="link">Ver todos</a>
-          </div>
+          ${cardHeader('target', 'Objetivos de ahorro', '<a href="#/objetivos" class="link">Ver todos</a>')}
           ${goalsHTML()}
         </section>
       </div>`;
 
-    Charts.evolutionLine('dash-evolution', key, 6);
+    Charts.monthlyBars('dash-evolution', key, 6);
     Charts.categoryDoughnut('dash-categories', key);
   }
 

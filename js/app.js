@@ -32,11 +32,45 @@ const App = (() => {
     $('#view-subtitle').textContent = view.subtitle(state.month);
     try {
       view.render(state.month);
+      renderSidebarSummary();
     } catch (error) {
       console.error(error);
       UI.toast('Se ha producido un error al mostrar esta sección', 'error');
     }
   }
+
+  /** Agrupa varios cambios de datos seguidos en un único repintado (en el siguiente frame) */
+  let renderQueued = false;
+  function scheduleRender() {
+    if (renderQueued) return;
+    renderQueued = true;
+    requestAnimationFrame(() => {
+      renderQueued = false;
+      render();
+    });
+  }
+
+  /** Mini resumen del mes seleccionado en la barra lateral (visible en todas las secciones) */
+  function renderSidebarSummary() {
+    const box = $('#sidebar-summary');
+    const summary = Stats.monthSummary(state.month);
+    const budget = Budget.monthlyStatus(state.month);
+    const month = monthLabel(state.month).split(' ')[0].toLowerCase();
+    let detail = `<small>Ingresos: ${formatMoney(summary.income)}</small>`;
+    if (budget.limit) {
+      detail = `
+        ${UI.progressBar(budget.pct, budget.level, 'Presupuesto mensual utilizado')}
+        <small>${budget.available >= 0
+          ? `Quedan ${formatMoney(budget.available)} de ${formatMoney(budget.limit)}`
+          : `${formatMoney(-budget.available)} por encima del presupuesto`}</small>`;
+    }
+    box.innerHTML = `
+      <span class="sidebar-summary-label">Gastado en ${month}</span>
+      <strong class="sidebar-summary-value">${UI.money(summary.expense)}</strong>
+      ${detail}`;
+  }
+
+  let enteringTimer = null;
 
   function navigate(name) {
     if (!VIEWS[name]) name = 'dashboard';
@@ -44,6 +78,13 @@ const App = (() => {
     state.view = name;
 
     $$('.view').forEach((el) => el.classList.toggle('is-active', el.id === `view-${name}`));
+    // Las animaciones de entrada solo se reproducen al llegar a una sección,
+    // no cada vez que la vista se vuelve a pintar porque han cambiado los datos
+    const viewEl = $(`#view-${name}`);
+    $$('.view.is-entering').forEach((el) => el.classList.remove('is-entering'));
+    viewEl.classList.add('is-entering');
+    clearTimeout(enteringTimer);
+    enteringTimer = setTimeout(() => viewEl.classList.remove('is-entering'), 900);
     $$('.nav-link').forEach((link) => {
       const active = link.dataset.view === name;
       link.classList.toggle('is-active', active);
@@ -190,7 +231,17 @@ const App = (() => {
 
   function closeSearch(clear = false) {
     $('#global-search-results').hidden = true;
-    if (clear) $('#global-search-input').value = '';
+    if (clear) {
+      $('#global-search-input').value = '';
+      setMobileSearch(false);
+    }
+  }
+
+  /** En móvil el buscador está plegado y se despliega con su botón */
+  function setMobileSearch(open) {
+    $('.topbar').classList.toggle('search-open', open);
+    $('#search-toggle').setAttribute('aria-expanded', String(open));
+    if (open) $('#global-search-input').focus();
   }
 
   function searchInTransactions(query) {
@@ -271,13 +322,13 @@ const App = (() => {
 
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
         event.preventDefault();
-        $('#global-search-input').focus();
+        setMobileSearch(true);
         return;
       }
       if (typing || UI.isAnyModalOpen() || event.ctrlKey || event.metaKey || event.altKey) return;
 
       const key = event.key;
-      if (key === '/') { event.preventDefault(); $('#global-search-input').focus(); return; }
+      if (key === '/') { event.preventDefault(); setMobileSearch(true); return; }
       if (key === '?') { UI.openModal('shortcuts-modal'); return; }
       if (key === 'Escape') { closeSidebar(); return; }
 
@@ -330,10 +381,11 @@ const App = (() => {
         const theme = Store.getTheme();
         if (theme === 'light' || theme === 'dark') applyTheme(theme, { save: false });
       }
-      render();
+      scheduleRender();
     });
 
     $('#menu-toggle').addEventListener('click', openSidebar);
+    $('#search-toggle').addEventListener('click', () => setMobileSearch(!$('.topbar').classList.contains('search-open')));
     $('#sidebar-close').addEventListener('click', closeSidebar);
     $('#sidebar-overlay').addEventListener('click', closeSidebar);
     $('#theme-toggle').addEventListener('click', toggleTheme);

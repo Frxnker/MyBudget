@@ -33,8 +33,39 @@ const Transactions = (() => {
     return all().find((t) => t.id === id);
   }
 
+  /*
+   * Índices en memoria. Store sustituye el array completo en cada cambio (nunca lo modifica),
+   * así que basta con comparar la referencia para saber si hay que reconstruirlos.
+   * Las listas que devuelven son de solo lectura: no hay que modificarlas.
+   */
+  let indexedList = null;
+  let byMonth = new Map();   // "AAAA-MM" → movimientos de ese mes
+  let byDateDesc = [];       // todos los movimientos, del más reciente al más antiguo
+
+  function ensureIndex() {
+    const list = all();
+    if (list === indexedList) return;
+    byMonth = new Map();
+    list.forEach((t) => {
+      const key = t.date.slice(0, 7);
+      if (!byMonth.has(key)) byMonth.set(key, []);
+      byMonth.get(key).push(t);
+    });
+    byDateDesc = [...list].sort((a, b) => b.date.localeCompare(a.date) || b.createdAt - a.createdAt);
+    indexedList = list;
+  }
+
+  /** Movimientos de un mes ("AAAA-MM"), opcionalmente solo de un tipo */
   function forMonth(key, type = null) {
-    return all().filter((t) => t.date.startsWith(key) && (!type || t.type === type));
+    ensureIndex();
+    const list = byMonth.get(key) || [];
+    return type ? list.filter((t) => t.type === type) : list;
+  }
+
+  /** Los "limit" movimientos más recientes */
+  function recent(limit = 6) {
+    ensureIndex();
+    return byDateDesc.slice(0, limit);
   }
 
   function allMethods() {
@@ -271,18 +302,16 @@ const Transactions = (() => {
       </div>
 
       <div class="card filters-card">
-        <div class="filters-header">
-          <h2 class="card-title">${Icons.get('filter', 18)}Filtros</h2>
-          <div class="filters-buttons">
-            <button class="btn btn-ghost btn-sm" id="filter-clear" type="button">Limpiar filtros</button>
-            <button class="btn btn-ghost btn-sm filters-toggle" id="filters-toggle" type="button" aria-expanded="false" aria-controls="filters-grid">Mostrar</button>
+        <div class="filters-bar">
+          <div class="filter-search">
+            ${Icons.get('search', 18)}
+            <label class="sr-only" for="filter-text">Buscar movimientos</label>
+            <input type="search" id="filter-text" placeholder="Buscar por concepto, notas, categoría o método…">
           </div>
+          <button class="btn btn-ghost btn-sm filters-toggle" id="filters-toggle" type="button" aria-expanded="false" aria-controls="filters-grid"></button>
+          <button class="btn btn-link btn-sm" id="filter-clear" type="button">Limpiar filtros</button>
         </div>
         <div class="filters-grid" id="filters-grid">
-          <div class="field field-search">
-            <label for="filter-text">Buscar</label>
-            <input type="search" id="filter-text" placeholder="Concepto, notas, categoría…">
-          </div>
           <div class="field">
             <label for="filter-type">Tipo</label>
             <select id="filter-type">
@@ -321,7 +350,7 @@ const Transactions = (() => {
         </div>
       </div>
 
-      <div class="summary-strip" id="tx-summary"></div>
+      <div class="card summary-strip" id="tx-summary"></div>
       <div class="card table-card" id="tx-table"></div>`;
 
     const onFilter = () => {
@@ -344,7 +373,6 @@ const Transactions = (() => {
     $('#filters-toggle').addEventListener('click', (event) => {
       const open = $('.filters-card').classList.toggle('is-open');
       event.currentTarget.setAttribute('aria-expanded', String(open));
-      event.currentTarget.textContent = open ? 'Ocultar' : 'Mostrar';
     });
     $('#filter-clear').addEventListener('click', () => {
       setSearch('');
@@ -416,9 +444,14 @@ const Transactions = (() => {
     });
   }
 
-  function hasActiveFilters() {
+  /** Número de filtros activos sin contar el texto de búsqueda */
+  function activeFilterCount() {
     const f = state.filters;
-    return Boolean(f.text || f.type !== 'all' || f.categoryId || f.method || f.from || f.to);
+    return [f.type !== 'all', f.categoryId, f.method, f.from, f.to].filter(Boolean).length;
+  }
+
+  function hasActiveFilters() {
+    return Boolean(state.filters.text || activeFilterCount());
   }
 
   function sortHeader(field, label) {
@@ -440,11 +473,12 @@ const Transactions = (() => {
             ${UI.categoryBadge(category, 'sm')}
             <div>
               <strong>${escapeHTML(t.concept)}</strong>
-              ${t.notes ? `<small class="muted">${escapeHTML(t.notes)}</small>` : ''}
+              <small class="concept-meta">${formatDate(t.date)} · ${escapeHTML(t.method || '—')}</small>
+              ${t.notes ? `<small>${escapeHTML(t.notes)}</small>` : ''}
             </div>
           </div>
         </td>
-        <td data-label="Categoría">${escapeHTML(category.name)}</td>
+        <td data-label="Categoría">${UI.categoryChip(category)}</td>
         <td data-label="Tipo"><span class="pill pill-${t.type}">${TYPES[t.type]}</span></td>
         <td data-label="Método">${escapeHTML(t.method || '—')}</td>
         <td data-label="Cantidad" class="td-amount amount-${t.type}">${formatMoney(sign * t.amount, { sign: true })}</td>
@@ -463,11 +497,13 @@ const Transactions = (() => {
 
     $('#tx-summary').innerHTML = `
       <div class="summary-item"><span>Movimientos</span><strong>${list.length}</strong></div>
-      <div class="summary-item"><span>Ingresos</span><strong class="amount-income">${formatMoney(income)}</strong></div>
-      <div class="summary-item"><span>Gastos</span><strong class="amount-expense">${formatMoney(expense)}</strong></div>
-      <div class="summary-item"><span>Balance</span><strong>${formatMoney(income - expense, { sign: true })}</strong></div>`;
+      <div class="summary-item"><span>Ingresos</span><strong class="amount-income">${UI.money(income)}</strong></div>
+      <div class="summary-item"><span>Gastos</span><strong>${UI.money(expense)}</strong></div>
+      <div class="summary-item"><span>Balance</span><strong>${UI.money(income - expense, { sign: true })}</strong></div>`;
 
     $('#filter-clear').disabled = !hasActiveFilters();
+    const count = activeFilterCount();
+    $('#filters-toggle').innerHTML = `${Icons.get('filter', 16)}Filtros${count ? `<span class="count-badge">${count}</span>` : ''}`;
     const table = $('#tx-table');
     if (!list.length) {
       table.innerHTML = all().length
@@ -533,7 +569,7 @@ const Transactions = (() => {
   }
 
   return {
-    TYPES, METHODS, all, get, forMonth, add, update, remove, openForm,
+    TYPES, METHODS, all, get, forMonth, recent, add, update, remove, openForm,
     setSearch, render, rowHTML, actions, init, applyFilters,
   };
 })();

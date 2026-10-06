@@ -44,6 +44,16 @@ const Budget = (() => {
     return { limit, spent, available: limit - spent, pct, level: UI.budgetLevel(pct) };
   }
 
+  /**
+   * Ritmo ideal de gasto: qué parte del límite "tocaría" llevar gastada a día de hoy
+   * si se gastara lo mismo cada día. Solo tiene sentido en el mes actual.
+   */
+  function idealPace(key, limit) {
+    if (!limit || key !== Utils.currentMonthKey()) return null;
+    const pct = (new Date().getDate() / Utils.daysInMonth(key)) * 100;
+    return { pct, amount: Math.round((limit * pct) / 100) };
+  }
+
   /** Estado de cada límite por categoría en un mes */
   function categoryStatuses(key) {
     return Object.entries(data().byCategory)
@@ -138,32 +148,41 @@ const Budget = (() => {
    * VISTA
    * ------------------------------------------------------------- */
 
-  const STATUS_TEXT = {
-    ok: 'Vas bien, sigue así.',
-    warn: 'Cuidado: estás cerca del límite.',
-    over: 'Has superado el presupuesto.',
+  const STATUS = {
+    ok: { label: 'En control', text: 'Vas bien, sigue así.', icon: 'check' },
+    warn: { label: 'Cerca del límite', text: 'Cuidado: te queda poco margen.', icon: 'alert' },
+    over: { label: 'Superado', text: 'Has superado el presupuesto.', icon: 'alert' },
   };
+
+  /** Etiqueta de estado de un presupuesto (verde, ámbar o rojo, siempre con icono y texto) */
+  function statusPill(level) {
+    return `<span class="status-pill status-${level}">${Icons.get(STATUS[level].icon, 14)}${STATUS[level].label}</span>`;
+  }
 
   function monthlyCardHTML(key) {
     const s = monthlyStatus(key);
     const isCurrent = key === Utils.currentMonthKey();
     const daysLeft = Utils.daysInMonth(key) - Stats.elapsedDaysInMonth(key) + (isCurrent ? 1 : 0);
+    const pace = idealPace(key, s.limit);
+
+    // La marca es informativa: los gastos fijos (alquiler, recibos) suelen concentrarse a principio de mes
+    const paceText = pace
+      ? `<p class="hint">${Icons.get('clock', 14)}<span>La marca de la barra indica lo que llevarías gastado hoy repartiendo el presupuesto por igual cada día: <strong>${formatMoney(pace.amount)}</strong>.</span></p>`
+      : '';
 
     const body = s.limit
       ? `
         <div class="budget-figures">
-          <div><span>Presupuesto</span><strong>${formatMoney(s.limit)}</strong></div>
-          <div><span>Gastado</span><strong class="amount-expense">${formatMoney(s.spent)}</strong></div>
+          <div><span>Gastado</span><strong>${UI.money(s.spent)}</strong></div>
+          <div><span>Presupuesto</span><strong>${UI.money(s.limit)}</strong></div>
           <div><span>${s.available >= 0 ? 'Disponible' : 'Exceso'}</span>
-            <strong class="${s.available >= 0 ? 'amount-income' : 'amount-expense'}">${formatMoney(Math.abs(s.available))}</strong></div>
+            <strong class="${s.available >= 0 ? 'amount-income' : 'amount-negative'}">${UI.money(Math.abs(s.available))}</strong></div>
         </div>
-        ${UI.progressBar(s.pct, s.level, 'Presupuesto mensual utilizado')}
-        <div class="budget-status status-${s.level}">
-          ${Icons.get(s.level === 'ok' ? 'check' : 'alert', 16)}
-          <span><strong>${formatPercent(s.pct)}</strong> utilizado · ${STATUS_TEXT[s.level]}</span>
-        </div>
+        ${UI.progressBar(s.pct, s.level, 'Presupuesto mensual utilizado', pace ? { marker: pace.pct, markerLabel: `Ritmo ideal hoy: ${formatMoney(pace.amount)}` } : {})}
+        <p class="budget-status"><strong>${formatPercent(s.pct)}</strong> utilizado · ${STATUS[s.level].text}</p>
+        ${paceText}
         ${isCurrent && s.available > 0 && daysLeft > 0
-          ? `<p class="hint">Puedes gastar <strong>${formatMoney(Math.floor(s.available / daysLeft))}</strong> al día durante los ${daysLeft} días que quedan de mes.</p>`
+          ? `<p class="hint">${Icons.get('wallet', 14)}<span>Puedes gastar <strong>${formatMoney(Math.floor(s.available / daysLeft))}</strong> al día durante los ${daysLeft} días que quedan de mes.</span></p>`
           : ''}`
       : '<p class="muted">Aún no has definido un presupuesto mensual. Establece una cantidad máxima de gasto para cada mes.</p>';
 
@@ -172,48 +191,58 @@ const Budget = (() => {
         <div class="card-header">
           <div>
             <h2 class="card-title">${Icons.get('pie', 18)}Presupuesto mensual</h2>
-            <p class="muted">${Utils.monthLabel(key)}</p>
+            <p class="card-subtitle">${Utils.monthLabel(key)}</p>
           </div>
+          ${s.limit ? statusPill(s.level) : ''}
         </div>
         ${body}
         <form class="inline-form" id="monthly-budget-form" novalidate>
           <div class="field">
-            <label for="monthly-budget-input">${s.limit ? 'Cambiar presupuesto (€)' : 'Presupuesto mensual (€)'}</label>
+            <label for="monthly-budget-input">${s.limit ? 'Cambiar presupuesto' : 'Presupuesto mensual'}</label>
             <div class="input-group">
-              <input type="text" id="monthly-budget-input" name="monthly" inputmode="decimal" autocomplete="off"
-                placeholder="Ej. 1000" value="${s.limit ? Utils.centsToInput(s.limit) : ''}">
+              <div class="input-affix">
+                <input type="text" id="monthly-budget-input" name="monthly" inputmode="decimal" autocomplete="off"
+                  placeholder="Ej. 1000" value="${s.limit ? Utils.centsToInput(s.limit) : ''}">
+                <span class="input-suffix" aria-hidden="true">€</span>
+              </div>
               <button class="btn btn-primary" type="submit">Guardar</button>
             </div>
           </div>
-          ${s.limit ? '<button class="btn btn-ghost btn-sm" type="button" data-action="remove-monthly-budget">Quitar presupuesto</button>' : ''}
+          ${s.limit ? '<button class="btn btn-link btn-sm" type="button" data-action="remove-monthly-budget">Quitar presupuesto</button>' : ''}
         </form>
       </div>`;
   }
 
   function categoryCardHTML(s) {
+    const name = escapeHTML(s.category.name);
+    const id = escapeHTML(s.categoryId);
     return `
       <article class="card budget-card level-${s.level}">
         <header class="budget-card-header">
           ${UI.categoryBadge(s.category)}
-          <div>
-            <h3>${escapeHTML(s.category.name)}</h3>
-            <span class="muted">${formatMoney(s.limit)}/mes</span>
+          <div class="grow">
+            <h3>${name}</h3>
+            <span class="muted">${formatMoney(s.limit)} al mes</span>
           </div>
           <div class="card-actions">
-            <button class="btn-icon btn-icon-sm" data-action="edit-category-budget" data-id="${escapeHTML(s.categoryId)}" aria-label="Editar límite de ${escapeHTML(s.category.name)}">${Icons.get('edit', 16)}</button>
-            <button class="btn-icon btn-icon-sm btn-icon-danger" data-action="delete-category-budget" data-id="${escapeHTML(s.categoryId)}" aria-label="Eliminar límite de ${escapeHTML(s.category.name)}">${Icons.get('trash', 16)}</button>
+            <button class="btn-icon btn-icon-sm" data-action="edit-category-budget" data-id="${id}" aria-label="Editar límite de ${name}">${Icons.get('edit', 16)}</button>
+            <button class="btn-icon btn-icon-sm btn-icon-danger" data-action="delete-category-budget" data-id="${id}" aria-label="Eliminar límite de ${name}">${Icons.get('trash', 16)}</button>
           </div>
         </header>
+        <div class="budget-card-amounts">
+          <strong>${UI.money(s.spent)}</strong>
+          <span class="muted">${formatPercent(s.pct, 0)} usado</span>
+        </div>
         ${UI.progressBar(s.pct, s.level, `Límite de ${s.category.name}`)}
         <div class="budget-card-numbers">
-          <span>${formatMoney(s.spent)} gastado</span>
-          <strong class="${s.available >= 0 ? '' : 'amount-expense'}">
-            ${s.available >= 0 ? `${formatMoney(s.available)} disponible` : `${formatMoney(-s.available)} de exceso`}
-          </strong>
+          ${statusPill(s.level)}
+          <span class="${s.available >= 0 ? '' : 'amount-negative'}">
+            ${s.available >= 0 ? `Quedan <strong>${formatMoney(s.available)}</strong>` : `<strong>${formatMoney(-s.available)}</strong> de exceso`}
+          </span>
         </div>
         ${s.level === 'over'
           ? `<p class="budget-warning">${Icons.get('alert', 16)}Has superado tu presupuesto de ${escapeHTML(s.category.name.toLowerCase())}</p>`
-          : s.level === 'warn' ? `<p class="budget-warning is-warn">${Icons.get('alert', 16)}Te queda poco margen (${formatPercent(s.pct, 0)} usado)</p>` : ''}
+          : ''}
       </article>`;
   }
 
@@ -233,12 +262,25 @@ const Budget = (() => {
           <ul class="kv-list">
             <li><span>Categorías con límite</span><strong>${statuses.length}</strong></li>
             <li><span>Suma de límites</span><strong>${formatMoney(limitsTotal)}</strong></li>
-            <li><span>Categorías superadas</span><strong class="${statuses.some((s) => s.level === 'over') ? 'amount-expense' : ''}">${statuses.filter((s) => s.level === 'over').length}</strong></li>
+            <li><span>Categorías superadas</span><strong class="${statuses.some((s) => s.level === 'over') ? 'amount-negative' : ''}">${statuses.filter((s) => s.level === 'over').length}</strong></li>
             <li><span>Cerca del límite</span><strong>${statuses.filter((s) => s.level === 'warn').length}</strong></li>
           </ul>
           ${monthly && limitsTotal > monthly
             ? `<p class="alert alert-warn">${Icons.get('alert', 16)}La suma de los límites por categoría (${formatMoney(limitsTotal)}) supera tu presupuesto mensual (${formatMoney(monthly)}).</p>`
             : ''}
+          ${unlimited.length ? `
+            <h3 class="list-title list-title-spaced">Con gasto y sin límite</h3>
+            <ul class="simple-list">
+              ${unlimited.map((c) => `
+                <li>
+                  ${UI.categoryBadge(c.category, 'sm')}
+                  <span class="grow">
+                    <strong>${escapeHTML(c.category.name)}</strong>
+                    <small class="muted">${formatMoney(c.total)} este mes</small>
+                  </span>
+                  <button class="btn btn-link btn-sm" data-action="edit-category-budget-new" data-id="${escapeHTML(c.categoryId)}">Poner límite</button>
+                </li>`).join('')}
+            </ul>` : ''}
         </div>
       </div>
 
@@ -256,21 +298,7 @@ const Budget = (() => {
           icon: 'pie', title: 'Sin límites por categoría',
           text: 'Define cuánto quieres gastar como máximo en cada categoría (por ejemplo, 300 € en alimentación).',
           action: '<button class="btn btn-primary" data-action="add-category-budget">Añadir límite</button>',
-        })}</div>`}
-
-      ${unlimited.length ? `
-        <div class="card">
-          <h2 class="card-title">${Icons.get('tag', 18)}Categorías con gasto y sin límite</h2>
-          <ul class="simple-list">
-            ${unlimited.map((c) => `
-              <li>
-                ${UI.categoryBadge(c.category, 'sm')}
-                <span class="grow">${escapeHTML(c.category.name)}</span>
-                <strong>${formatMoney(c.total)}</strong>
-                <button class="btn btn-ghost btn-sm" data-action="edit-category-budget-new" data-id="${escapeHTML(c.categoryId)}">Poner límite</button>
-              </li>`).join('')}
-          </ul>
-        </div>` : ''}`;
+        })}</div>`}`;
 
     const form = $('#monthly-budget-form');
     form.addEventListener('submit', handleMonthlySubmit);
@@ -294,5 +322,5 @@ const Budget = (() => {
     UI.liveClearErrors(form);
   }
 
-  return { data, monthlyStatus, categoryStatuses, alerts, render, actions, init };
+  return { data, monthlyStatus, idealPace, categoryStatuses, alerts, render, actions, init };
 })();

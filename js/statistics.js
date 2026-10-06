@@ -32,6 +32,24 @@ const Stats = (() => {
     return sumType(list, 'income') - sumType(list, 'expense');
   }
 
+  /**
+   * Saldo acumulado al cierre de cada uno de los últimos "count" meses (el actual, hasta hoy).
+   * El último valor coincide con balance(). Se usa en la mini gráfica del dashboard.
+   */
+  function balanceHistory(count = 6) {
+    const today = todayISO();
+    const startKey = addMonths(currentMonthKey(), -(count - 1));
+    const signed = (t) => (t.type === 'income' ? t.amount : -t.amount);
+    let running = sumBy(Transactions.all().filter((t) => t.date < `${startKey}-01`), signed);
+    const result = [];
+    for (let i = 0; i < count; i++) {
+      const key = addMonths(startKey, i);
+      running += sumBy(Transactions.forMonth(key).filter((t) => t.date <= today), signed);
+      result.push({ key, balance: running });
+    }
+    return result;
+  }
+
   /** Comparativa con el mes anterior */
   function monthTrends(key) {
     const current = monthSummary(key);
@@ -160,7 +178,7 @@ const Stats = (() => {
   }
 
   return {
-    change, summarize, monthSummary, balance, monthTrends, byCategory, categoriesForMonth,
+    change, summarize, monthSummary, balance, balanceHistory, monthTrends, byCategory, categoriesForMonth,
     topCategories, categorySpent, dailyExpenses, evolution, elapsedDaysInMonth, monthStats, yearStats, yearSummary,
   };
 })();

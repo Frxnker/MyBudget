@@ -17,31 +17,84 @@ const Charts = (() => {
     const css = getComputedStyle(document.documentElement);
     const v = (name) => css.getPropertyValue(name).trim();
     return {
-      text: v('--text-muted'), grid: v('--chart-grid'), surface: v('--surface'),
+      text: v('--text'), text2: v('--text-2'), muted: v('--text-muted'),
+      surface: v('--surface'), border: v('--border'), grid: v('--chart-grid'),
       income: v('--chart-income'), expense: v('--chart-expense'), savings: v('--chart-savings'),
-      reference: v('--text-muted'), rest: v('--chart-rest'),
+      rest: v('--chart-rest'), guide: v('--chart-guide'), band: v('--chart-band'),
     };
   }
 
+  /*
+   * Plugin propio: al pasar el ratón resalta la columna activa
+   * (una banda suave en las gráficas de barras y una línea guía en las de líneas).
+   */
+  const hoverGuide = {
+    id: 'hoverGuide',
+    beforeDatasetsDraw(chart, args, options) {
+      if (chart.config.type === 'doughnut' || !options.color) return;
+      const active = chart.tooltip && chart.tooltip.getActiveElements();
+      if (!active || !active.length) return;
+      const { ctx, chartArea } = chart;
+      const x = active[0].element.x;
+      ctx.save();
+      if (chart.config.type === 'line') {
+        ctx.strokeStyle = options.color;
+        ctx.lineWidth = 1;
+        ctx.setLineDash([4, 4]);
+        ctx.beginPath();
+        ctx.moveTo(x, chartArea.top);
+        ctx.lineTo(x, chartArea.bottom);
+        ctx.stroke();
+      } else {
+        const width = chartArea.width / chart.data.labels.length;
+        ctx.fillStyle = options.band;
+        ctx.fillRect(x - width / 2, chartArea.top, width, chartArea.bottom - chartArea.top);
+      }
+      ctx.restore();
+    },
+  };
+
   const moneyTick = (value) => formatMoney(value * 100, { decimals: false });
   const moneyTooltip = (ctx) => ` ${ctx.dataset.label}: ${formatMoney(Math.round(ctx.parsed.y * 100))}`;
+
+  function tooltipStyle(c) {
+    return {
+      backgroundColor: c.surface,
+      borderColor: c.border,
+      borderWidth: 1,
+      titleColor: c.text,
+      bodyColor: c.text2,
+      titleFont: { weight: '700' },
+      padding: 12,
+      cornerRadius: 12,
+      boxPadding: 6,
+      usePointStyle: true,
+      caretSize: 0,
+    };
+  }
 
   function baseOptions(c) {
     return {
       responsive: true,
       maintainAspectRatio: false,
-      animation: { duration: 500 },
+      animation: { duration: 600, easing: 'easeOutQuart' },
       interaction: { mode: 'index', intersect: false },
       plugins: {
         legend: {
           position: 'bottom',
-          labels: { color: c.text, usePointStyle: true, pointStyle: 'circle', boxWidth: 8, boxHeight: 8, padding: 16 },
+          labels: { color: c.text2, usePointStyle: true, pointStyle: 'circle', boxWidth: 8, boxHeight: 8, padding: 18 },
         },
-        tooltip: { callbacks: { label: moneyTooltip }, padding: 10, cornerRadius: 8, boxPadding: 4 },
+        tooltip: { ...tooltipStyle(c), callbacks: { label: moneyTooltip } },
+        hoverGuide: { color: c.guide, band: c.band },
       },
       scales: {
-        x: { grid: { display: false }, ticks: { color: c.text }, border: { display: false } },
-        y: { grid: { color: c.grid }, ticks: { color: c.text, callback: moneyTick, maxTicksLimit: 6 }, border: { display: false }, beginAtZero: true },
+        x: { grid: { display: false }, ticks: { color: c.muted, padding: 6 }, border: { display: false } },
+        y: {
+          grid: { color: c.grid },
+          ticks: { color: c.muted, callback: moneyTick, maxTicksLimit: 6, padding: 8 },
+          border: { display: false },
+          beginAtZero: true,
+        },
       },
     };
   }
@@ -59,26 +112,38 @@ const Charts = (() => {
     note.textContent = message;
   }
 
-  /** Crea la gráfica o actualiza la existente (evita parpadeos al cambiar los datos) */
+  /**
+   * Crea la gráfica o actualiza la existente.
+   * Cada vez que cambian los datos la vista se vuelve a pintar con un <canvas> nuevo. En lugar de
+   * destruir la gráfica y crearla otra vez, se coloca su contenedor anterior en el nuevo hueco y se
+   * actualizan los datos: Chart.js anima la transición y se ahorra el coste de recrearla.
+   */
   function draw(id, config, isEmpty) {
-    const canvas = document.getElementById(id);
+    let canvas = document.getElementById(id);
     if (!canvas) return;
     if (!available()) {
       setEmpty(canvas, true, 'No se ha podido cargar la librería de gráficas (js/vendor/chart.umd.min.js).');
       return;
     }
-    setEmpty(canvas, isEmpty);
     const existing = instances[id];
     if (isEmpty) {
       if (existing) { existing.destroy(); delete instances[id]; }
+      setEmpty(canvas, true);
       return;
     }
-    if (existing && existing.canvas === canvas && existing.config.type === config.type) {
+    if (existing && existing.config.type === config.type) {
+      const oldBox = existing.canvas.closest('.chart-box');
+      const newBox = canvas.closest('.chart-box');
+      // Se mueve la caja entera: Chart.js vigila el tamaño del contenedor, no solo del canvas
+      if (oldBox && newBox && oldBox !== newBox) newBox.replaceWith(oldBox);
+      canvas = existing.canvas;
+      setEmpty(canvas, false);
       existing.data = config.data;
       existing.options = config.options;
       existing.update();
     } else {
       if (existing) existing.destroy();
+      setEmpty(canvas, false);
       instances[id] = new Chart(canvas, config);
     }
   }
@@ -107,19 +172,22 @@ const Charts = (() => {
           label: 'Gasto',
           data: items.map((i) => centsToEuros(i.total)),
           backgroundColor: items.map((i) => i.category.color),
-          borderColor: c.surface,
-          borderWidth: 2,
-          hoverOffset: 6,
+          borderWidth: 0,
+          spacing: 3,
+          borderRadius: 5,
+          hoverOffset: 5,
         }],
       },
       options: {
         responsive: true,
         maintainAspectRatio: false,
-        cutout: '68%',
-        animation: { duration: 500 },
+        cutout: '74%',
+        layout: { padding: 6 },
+        animation: { duration: 600, easing: 'easeOutQuart' },
         plugins: {
           legend: { display: false }, // usamos una leyenda HTML con importes
           tooltip: {
+            ...tooltipStyle(c),
             callbacks: {
               label: (ctx) => ` ${ctx.label}: ${formatMoney(Math.round(ctx.parsed * 100))} (${Utils.formatPercent(items[ctx.dataIndex].pct)})`,
             },
@@ -136,40 +204,80 @@ const Charts = (() => {
           <span class="legend-dot" style="background:${i.category.color}"></span>
           <span class="legend-name">${Utils.escapeHTML(i.category.name)}</span>
           <span class="legend-value">${formatMoney(i.total)}</span>
-          <span class="legend-pct muted">${Utils.formatPercent(i.pct, 0)}</span>
+          <span class="legend-pct">${Utils.formatPercent(i.pct, 0)}</span>
         </li>`).join('');
     }
     const center = document.getElementById(`${id}-total`);
-    if (center) center.innerHTML = total ? `<span>Total</span><strong>${formatMoney(total)}</strong>` : '';
+    if (center) center.innerHTML = total ? `<span>Total gastado</span><strong>${UI.money(total)}</strong>` : '';
+  }
+
+  /* ---------------------------------------------------------------
+   * INGRESOS Y GASTOS POR MES (barras agrupadas, dashboard)
+   * ------------------------------------------------------------- */
+  function monthlyBars(id, endKey, months = 6) {
+    const c = colors();
+    const data = Stats.evolution(endKey, months);
+    const bar = (label, values, color) => ({
+      label,
+      data: values.map(centsToEuros),
+      backgroundColor: color,
+      borderRadius: 6,
+      borderSkipped: 'start',
+      categoryPercentage: 0.62,
+      barPercentage: 0.86,
+      maxBarThickness: 26,
+    });
+
+    const options = baseOptions(c);
+    options.plugins.tooltip.callbacks.footer = (items) => {
+      const month = data[items[0].dataIndex];
+      return month.count ? `Ahorro: ${formatMoney(month.savings, { sign: true })}` : 'Sin movimientos';
+    };
+    options.plugins.tooltip.footerColor = c.text;
+
+    draw(id, {
+      type: 'bar',
+      data: {
+        labels: data.map((m) => `${monthLabel(m.key, true)} ${m.key.slice(2, 4)}`),
+        datasets: [
+          bar('Ingresos', data.map((m) => m.income), c.income),
+          bar('Gastos', data.map((m) => m.expense), c.expense),
+        ],
+      },
+      options,
+    }, data.every((m) => m.count === 0));
   }
 
   /* ---------------------------------------------------------------
    * EVOLUCIÓN MENSUAL (líneas)
+   * Los meses sin ningún movimiento se dejan como hueco: "sin datos" no es lo mismo que 0 €.
    * ------------------------------------------------------------- */
   function evolutionLine(id, endKey, months = 6, { savings = true } = {}) {
     const c = colors();
     const data = Stats.evolution(endKey, months);
-    const isEmpty = data.every((m) => m.income === 0 && m.expense === 0);
+    const value = (m, field) => (m.count ? centsToEuros(m[field]) : null);
 
-    const line = (label, values, color, extra = {}) => ({
+    const line = (label, field, color, extra = {}) => ({
       label,
-      data: values.map(centsToEuros),
+      data: data.map((m) => value(m, field)),
       borderColor: color,
       backgroundColor: color,
       borderWidth: 2,
-      pointRadius: 3,
+      pointRadius: 3.5,
       pointHoverRadius: 6,
+      pointBackgroundColor: color,
       pointBorderColor: c.surface,
       pointBorderWidth: 2,
-      tension: 0.3,
+      tension: 0.35,
+      spanGaps: false,
       ...extra,
     });
 
     const datasets = [
-      line('Ingresos', data.map((m) => m.income), c.income),
-      line('Gastos', data.map((m) => m.expense), c.expense),
+      line('Ingresos', 'income', c.income),
+      line('Gastos', 'expense', c.expense),
     ];
-    if (savings) datasets.push(line('Ahorro', data.map((m) => m.savings), c.savings, { borderDash: [6, 4] }));
+    if (savings) datasets.push(line('Ahorro', 'savings', c.savings, { borderDash: [6, 4] }));
 
     const options = baseOptions(c);
     options.scales.y.beginAtZero = !data.some((m) => m.savings < 0);
@@ -178,7 +286,7 @@ const Charts = (() => {
       type: 'line',
       data: { labels: data.map((m) => `${monthLabel(m.key, true)} ${m.key.slice(2, 4)}`), datasets },
       options,
-    }, isEmpty);
+    }, data.every((m) => m.count === 0));
   }
 
   /* ---------------------------------------------------------------
@@ -196,8 +304,8 @@ const Charts = (() => {
       data: days.map(centsToEuros),
       backgroundColor: c.expense,
       borderRadius: 4,
-      borderSkipped: 'bottom',
-      maxBarThickness: 18,
+      borderSkipped: 'start',
+      maxBarThickness: 16,
       order: 2,
     }];
 
@@ -207,7 +315,7 @@ const Charts = (() => {
         type: 'line',
         label: 'Presupuesto diario',
         data: days.map(() => centsToEuros(perDay)),
-        borderColor: c.reference,
+        borderColor: c.muted,
         borderDash: [5, 5],
         borderWidth: 1.5,
         pointRadius: 0,
@@ -229,9 +337,10 @@ const Charts = (() => {
 
   function init() {
     if (!available()) return;
+    Chart.register(hoverGuide);
     Chart.defaults.font.family = "'Plus Jakarta Sans', system-ui, sans-serif";
     Chart.defaults.font.size = 12;
   }
 
-  return { init, categoryDoughnut, evolutionLine, dailyBar, available };
+  return { init, categoryDoughnut, monthlyBars, evolutionLine, dailyBar, available };
 })();

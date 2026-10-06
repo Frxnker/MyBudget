@@ -1,6 +1,8 @@
 /**
  * icons.js
- * Iconos SVG en línea (sin dependencias externas). Basados en el estilo de trazo de Lucide.
+ * Iconos SVG (sin dependencias externas). Basados en el estilo de trazo de Lucide.
+ * Cada icono se define una sola vez en un "sprite" (<symbol>) y se reutiliza con <use>,
+ * así el HTML que se genera es mucho más ligero que repitiendo los trazados.
  * Uso en HTML:  <span data-icon="wallet"></span>   → se rellena con Icons.hydrate()
  * Uso en JS:    Icons.get('trash', 18)
  */
@@ -37,6 +39,8 @@ const Icons = (() => {
     chevronRight: '<path d="m9 18 6-6-6-6"/>',
     chevronUp: '<path d="m18 15-6-6-6 6"/>',
     chevronDown: '<path d="m6 9 6 6 6-6"/>',
+    arrowUp: '<path d="m5 12 7-7 7 7"/><path d="M12 19V5"/>',
+    arrowDown: '<path d="M12 5v14"/><path d="m19 12-7 7-7-7"/>',
     sort: '<path d="m7 15 5 5 5-5"/><path d="m7 9 5-5 5 5"/>',
     keyboard: '<rect width="20" height="16" x="2" y="4" rx="2"/><path d="M6 8h.01M10 8h.01M14 8h.01M18 8h.01M8 12h.01M12 12h.01M16 12h.01M7 16h10"/>',
     inbox: '<path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>',
@@ -53,8 +57,19 @@ const Icons = (() => {
     palette: '<circle cx="13.5" cy="6.5" r="1.5"/><circle cx="17.5" cy="10.5" r="1.5"/><circle cx="8.5" cy="7.5" r="1.5"/><circle cx="6.5" cy="12.5" r="1.5"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.93 0 1.65-.75 1.65-1.69 0-.44-.18-.84-.44-1.13-.29-.29-.44-.65-.44-1.13a1.64 1.64 0 0 1 1.67-1.67h2c3.05 0 5.56-2.5 5.56-5.55C21.96 6.01 17.46 2 12 2z"/>',
   };
 
+  /** Inserta el sprite con todos los iconos (una sola vez, al principio del <body>) */
+  function injectSprite() {
+    if (document.getElementById('icon-sprite')) return;
+    const symbols = Object.entries(paths)
+      .map(([name, content]) => `<symbol id="i-${name}" viewBox="0 0 24 24">${content}</symbol>`)
+      .join('');
+    document.body.insertAdjacentHTML('afterbegin',
+      `<svg id="icon-sprite" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" style="position:absolute;width:0;height:0;overflow:hidden">${symbols}</svg>`);
+  }
+
   function get(name, size = 20, className = '') {
-    return `<svg class="icon ${className}" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">${paths[name] || ''}</svg>`;
+    if (!paths[name]) return '';
+    return `<svg class="icon ${className}" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><use href="#i-${name}"></use></svg>`;
   }
 
   /** Rellena todos los elementos con [data-icon] dentro de "root" */
@@ -67,6 +82,8 @@ const Icons = (() => {
       else el.insertAdjacentHTML('afterbegin', svg);
     });
   }
+
+  injectSprite();
 
   return { get, hydrate };
 })();

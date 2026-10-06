@@ -5,7 +5,7 @@
  * puede registrarlos como gasto con un clic.
  */
 const Recurring = (() => {
-  const { $, escapeHTML, formatMoney, formatDate, addMonths, monthDiff, daysInMonth, todayISO } = Utils;
+  const { $, escapeHTML, formatMoney, addMonths, monthDiff, daysInMonth, todayISO } = Utils;
 
   const FREQUENCIES = {
     monthly: { label: 'Mensual', months: 1 },
@@ -192,43 +192,45 @@ const Recurring = (() => {
     const days = Utils.daysUntil(date);
     return `
       <li class="upcoming-item">
-        ${UI.categoryBadge(category, 'sm')}
+        ${UI.dateTile(date)}
         <div class="grow">
           <strong>${escapeHTML(item.name)}</strong>
-          <small class="muted">${formatDate(date)} · <span class="${days <= 3 ? 'text-warn' : ''}">${Utils.relativeDays(date)}</span></small>
+          <small>${escapeHTML(category.icon)} ${escapeHTML(category.name)} · <span class="${days <= 3 ? 'text-warn' : ''}">${Utils.relativeDays(date)}</span></small>
         </div>
-        <strong class="amount-expense">${formatMoney(item.amount)}</strong>
+        <strong class="upcoming-amount">${formatMoney(item.amount)}</strong>
       </li>`;
   }
 
-  function itemCardHTML(item) {
+  function itemCardHTML(item, next) {
     const category = Categories.get(item.categoryId);
-    const next = item.active ? nextDate(item) : null;
     const freq = FREQUENCIES[item.frequency];
+    const id = escapeHTML(item.id);
+    const name = escapeHTML(item.name);
     return `
       <article class="card recurring-card ${item.active ? '' : 'is-paused'}">
         <header class="recurring-header">
           ${UI.categoryBadge(category)}
           <div class="grow">
-            <h3>${escapeHTML(item.name)}</h3>
+            <h3>${name}</h3>
             <span class="muted">${escapeHTML(category.name)} · ${escapeHTML(item.method || '—')}</span>
           </div>
           <span class="pill ${item.active ? 'pill-income' : 'pill-muted'}">${item.active ? 'Activo' : 'Pausado'}</span>
         </header>
-        <div class="recurring-amount">
-          <strong>${formatMoney(item.amount)}</strong>
-          <span class="muted">${freq.label.toLowerCase()} · día ${item.day}</span>
+        <div class="recurring-body">
+          <div class="recurring-amount">
+            <strong>${UI.money(item.amount)}</strong>
+            <span class="muted">${freq.label} · día ${item.day}</span>
+          </div>
+          ${next
+            ? `<div class="recurring-next">${UI.dateTile(next)}<span class="recurring-next-text"><small>Próximo pago</small>${Utils.relativeDays(next)}</span></div>`
+            : '<div class="recurring-next"><span class="recurring-next-text"><small>Próximo pago</small>En pausa</span></div>'}
         </div>
-        <p class="recurring-next">
-          ${Icons.get('calendar', 16)}
-          ${next ? `Próximo pago: <strong>${formatDate(next)}</strong> <span class="muted">(${Utils.relativeDays(next)})</span>` : 'Sin próximos pagos (pausado)'}
-        </p>
         <footer class="card-footer-actions">
-          <button class="btn btn-ghost btn-sm" data-action="pay-recurring" data-id="${escapeHTML(item.id)}">${Icons.get('receipt', 16)}Registrar pago</button>
+          <button class="btn btn-ghost btn-sm" data-action="pay-recurring" data-id="${id}">${Icons.get('receipt', 16)}Registrar pago</button>
           <div class="card-actions">
-            <button class="btn-icon btn-icon-sm" data-action="toggle-recurring" data-id="${escapeHTML(item.id)}" title="${item.active ? 'Pausar' : 'Reactivar'}" aria-label="${item.active ? 'Pausar' : 'Reactivar'} ${escapeHTML(item.name)}">${Icons.get(item.active ? 'pause' : 'play', 16)}</button>
-            <button class="btn-icon btn-icon-sm" data-action="edit-recurring" data-id="${escapeHTML(item.id)}" title="Editar" aria-label="Editar ${escapeHTML(item.name)}">${Icons.get('edit', 16)}</button>
-            <button class="btn-icon btn-icon-sm btn-icon-danger" data-action="delete-recurring" data-id="${escapeHTML(item.id)}" title="Eliminar" aria-label="Eliminar ${escapeHTML(item.name)}">${Icons.get('trash', 16)}</button>
+            <button class="btn-icon btn-icon-sm" data-action="toggle-recurring" data-id="${id}" title="${item.active ? 'Pausar' : 'Reactivar'}" aria-label="${item.active ? 'Pausar' : 'Reactivar'} ${name}">${Icons.get(item.active ? 'pause' : 'play', 16)}</button>
+            <button class="btn-icon btn-icon-sm" data-action="edit-recurring" data-id="${id}" title="Editar" aria-label="Editar ${name}">${Icons.get('edit', 16)}</button>
+            <button class="btn-icon btn-icon-sm btn-icon-danger" data-action="delete-recurring" data-id="${id}" title="Eliminar" aria-label="Eliminar ${name}">${Icons.get('trash', 16)}</button>
           </div>
         </footer>
       </article>`;
@@ -251,12 +253,17 @@ const Recurring = (() => {
       return;
     }
 
+    // La próxima fecha de cada recurrente se calcula una sola vez (no en cada comparación del sort)
+    const cards = items
+      .map((item) => ({ item, next: item.active ? nextDate(item) : null }))
+      .sort((a, b) => (b.item.active - a.item.active) || (a.next || '').localeCompare(b.next || ''));
+
     view.innerHTML = `
       <div class="kpi-grid kpi-grid-4">
-        <div class="kpi"><span class="kpi-label">Coste mensual</span><strong class="kpi-value">${formatMoney(monthlyTotal)}</strong><span class="kpi-foot muted">Equivalente mensual</span></div>
-        <div class="kpi"><span class="kpi-label">Coste anual</span><strong class="kpi-value">${formatMoney(monthlyTotal * 12)}</strong><span class="kpi-foot muted">Estimación a 12 meses</span></div>
-        <div class="kpi"><span class="kpi-label">Cargos en ${Utils.monthLabel(key)}</span><strong class="kpi-value">${formatMoney(Utils.sumBy(thisMonth, (o) => o.item.amount))}</strong><span class="kpi-foot muted">${thisMonth.length} pago(s)</span></div>
-        <div class="kpi"><span class="kpi-label">Activos</span><strong class="kpi-value">${active.length} / ${items.length}</strong><span class="kpi-foot muted">Gastos recurrentes</span></div>
+        ${UI.kpi({ label: 'Coste mensual', value: UI.money(monthlyTotal), icon: 'repeat', foot: '<span class="muted">Equivalente al mes</span>' })}
+        ${UI.kpi({ label: 'Coste anual', value: UI.money(monthlyTotal * 12), icon: 'calendar', foot: '<span class="muted">Estimación a 12 meses</span>' })}
+        ${UI.kpi({ label: `Cargos en ${Utils.monthLabel(key).split(' ')[0].toLowerCase()}`, value: UI.money(Utils.sumBy(thisMonth, (o) => o.item.amount)), icon: 'receipt', foot: `<span class="muted">${thisMonth.length} pago(s)</span>` })}
+        ${UI.kpi({ label: 'Activos', value: `${active.length}<span class="kpi-value-minor"> / ${items.length}</span>`, icon: 'play', foot: '<span class="muted">Gastos recurrentes</span>' })}
       </div>
 
       <div class="grid grid-2-1">
@@ -265,10 +272,7 @@ const Recurring = (() => {
             <h2>Tus gastos recurrentes</h2>
             <button class="btn btn-primary" data-action="add-recurring">${Icons.get('plus', 18)}Añadir</button>
           </div>
-          <div class="recurring-grid">${items
-            .slice()
-            .sort((a, b) => (b.active - a.active) || (nextDate(a) || '').localeCompare(nextDate(b) || ''))
-            .map(itemCardHTML).join('')}</div>
+          <div class="recurring-grid">${cards.map((c) => itemCardHTML(c.item, c.next)).join('')}</div>
         </div>
         <aside class="card sticky-card">
           <h2 class="card-title">${Icons.get('clock', 18)}Próximos 30 días</h2>

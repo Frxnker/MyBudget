@@ -21,9 +21,7 @@
     })();
   </script>
 
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <!-- La fuente está incluida en el proyecto (assets/fonts) y se declara en style.css: no hay peticiones externas -->
   <link rel="stylesheet" href="css/style.css">
   <link rel="stylesheet" href="css/responsive.css">
 </head>
@@ -56,6 +54,9 @@
         <a href="#/configuracion" class="nav-link" data-view="configuracion"><span data-icon="settings"></span>Configuración<kbd>7</kbd></a>
       </nav>
 
+      <!-- Resumen del mes seleccionado (lo rellena app.js) -->
+      <div class="sidebar-summary" id="sidebar-summary"></div>
+
       <div class="sidebar-footer">
         <button class="sidebar-action" id="theme-toggle" type="button">
           <span class="theme-icon" data-icon="moon"></span>
@@ -80,6 +81,8 @@
           <h1 id="view-title">Dashboard</h1>
           <p id="view-subtitle" class="muted"></p>
         </div>
+
+        <button class="btn-icon search-toggle" id="search-toggle" type="button" aria-label="Buscar" aria-controls="global-search" aria-expanded="false" data-icon="search"></button>
 
         <div class="global-search" id="global-search">
           <span class="search-icon" data-icon="search" data-size="18"></span>
@@ -133,18 +136,24 @@
           </label>
         </div>
 
-        <div class="form-grid">
-          <div class="field span-2">
-            <label for="tx-concept">Concepto *</label>
-            <input type="text" id="tx-concept" name="concept" maxlength="80" placeholder="Ej. Compra en el supermercado">
-          </div>
+        <div class="amount-row">
           <div class="field">
-            <label for="tx-amount">Cantidad (€) *</label>
-            <input type="text" id="tx-amount" name="amount" inputmode="decimal" autocomplete="off" placeholder="0,00">
+            <label for="tx-amount">Cantidad *</label>
+            <div class="input-affix input-affix-lg">
+              <input type="text" id="tx-amount" name="amount" inputmode="decimal" autocomplete="off" placeholder="0,00">
+              <span class="input-suffix" aria-hidden="true">€</span>
+            </div>
           </div>
           <div class="field">
             <label for="tx-date">Fecha *</label>
             <input type="date" id="tx-date" name="date">
+          </div>
+        </div>
+
+        <div class="form-grid">
+          <div class="field span-2">
+            <label for="tx-concept">Concepto *</label>
+            <input type="text" id="tx-concept" name="concept" maxlength="80" placeholder="Ej. Compra en el supermercado">
           </div>
           <div class="field">
             <label for="tx-category">Categoría *</label>
@@ -219,8 +228,11 @@
             <select id="budget-category" name="categoryId"></select>
           </div>
           <div class="field span-2">
-            <label for="budget-amount">Límite mensual (€) *</label>
-            <input type="text" id="budget-amount" name="amount" inputmode="decimal" autocomplete="off" placeholder="0,00">
+            <label for="budget-amount">Límite mensual *</label>
+            <div class="input-affix">
+              <input type="text" id="budget-amount" name="amount" inputmode="decimal" autocomplete="off" placeholder="0,00">
+              <span class="input-suffix" aria-hidden="true">€</span>
+            </div>
           </div>
         </div>
       </div>
@@ -245,8 +257,11 @@
             <input type="text" id="rec-name" name="name" maxlength="60" placeholder="Ej. Netflix">
           </div>
           <div class="field">
-            <label for="rec-amount">Cantidad (€) *</label>
-            <input type="text" id="rec-amount" name="amount" inputmode="decimal" autocomplete="off" placeholder="0,00">
+            <label for="rec-amount">Cantidad *</label>
+            <div class="input-affix">
+              <input type="text" id="rec-amount" name="amount" inputmode="decimal" autocomplete="off" placeholder="0,00">
+              <span class="input-suffix" aria-hidden="true">€</span>
+            </div>
           </div>
           <div class="field">
             <label for="rec-category">Categoría *</label>
@@ -292,12 +307,18 @@
             <input type="text" id="goal-name" name="name" maxlength="60" placeholder="Ej. Viaje a Japón">
           </div>
           <div class="field">
-            <label for="goal-target">Objetivo (€) *</label>
-            <input type="text" id="goal-target" name="target" inputmode="decimal" autocomplete="off" placeholder="0,00">
+            <label for="goal-target">Objetivo *</label>
+            <div class="input-affix">
+              <input type="text" id="goal-target" name="target" inputmode="decimal" autocomplete="off" placeholder="0,00">
+              <span class="input-suffix" aria-hidden="true">€</span>
+            </div>
           </div>
           <div class="field">
-            <label for="goal-saved">Ahorrado (€)</label>
-            <input type="text" id="goal-saved" name="saved" inputmode="decimal" autocomplete="off" placeholder="0,00">
+            <label for="goal-saved">Ya ahorrado</label>
+            <div class="input-affix">
+              <input type="text" id="goal-saved" name="saved" inputmode="decimal" autocomplete="off" placeholder="0,00">
+              <span class="input-suffix" aria-hidden="true">€</span>
+            </div>
           </div>
           <div class="field">
             <label for="goal-deadline">Fecha límite <span class="muted">(opcional)</span></label>
@@ -336,8 +357,11 @@
           </label>
         </div>
         <div class="field">
-          <label for="contribution-amount">Cantidad (€) *</label>
-          <input type="text" id="contribution-amount" name="amount" inputmode="decimal" autocomplete="off" placeholder="0,00">
+          <label for="contribution-amount">Cantidad *</label>
+          <div class="input-affix">
+            <input type="text" id="contribution-amount" name="amount" inputmode="decimal" autocomplete="off" placeholder="0,00">
+            <span class="input-suffix" aria-hidden="true">€</span>
+          </div>
         </div>
       </div>
       <footer class="modal-footer">

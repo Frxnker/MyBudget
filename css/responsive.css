@@ -1,20 +1,21 @@
 /* ==========================================================================
    MyBudget · Adaptación a distintos tamaños de pantalla
    - ≤ 1280px: portátiles (1366x768)
-   - ≤ 1024px: tablets → el sidebar pasa a ser un menú desplegable
-   - ≤ 768px : móviles grandes → tablas en formato tarjeta
-   - ≤ 560px : móviles → modales tipo "bottom sheet"
+   - ≤ 1180px: el dashboard pasa a una columna
+   - ≤ 1024px: tablets → la barra lateral pasa a ser un menú desplegable
+   - ≤ 768px : móviles → tablas en formato tarjeta y buscador plegable
+   - ≤ 560px : móviles estrechos → modales tipo "bottom sheet"
    ========================================================================== */
 
 /* ---------- Portátiles ---------- */
 @media (max-width: 1280px) {
-  :root { --sidebar-width: 236px; }
+  :root { --sidebar-width: 240px; }
 
   .content { padding: 24px 24px 48px; }
-  .topbar { padding: 14px 24px; }
+  .topbar { padding: 12px 24px; }
 
   .stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .kpi-value { font-size: 1.4rem; }
+  .kpi-value { font-size: 1.55rem; }
   .global-search { max-width: 300px; }
 }
 
@@ -24,9 +25,20 @@
   .grid-3 > :last-child:nth-child(odd) { grid-column: span 2; }
   .grid-1-2 { grid-template-columns: 1fr; }
   .kpi-grid-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+  /* Con el hero a todo el ancho, el saldo y su evolución se colocan en paralelo */
+  .hero-card {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
+    column-gap: 32px;
+  }
+
+  .hero-top,
+  .hero-actions { grid-column: 1 / -1; }
+  .hero-spark { align-self: end; }
 }
 
-/* ---------- Tablets: sidebar desplegable ---------- */
+/* ---------- Tablets: barra lateral desplegable ---------- */
 @media (max-width: 1024px) {
   .app { grid-template-columns: 1fr; }
 
@@ -36,7 +48,7 @@
     left: 0;
     bottom: 0;
     z-index: 100;
-    width: 280px;
+    width: 284px;
     transform: translateX(-100%);
     transition: transform 0.35s var(--ease);
     box-shadow: var(--shadow-lg);
@@ -79,15 +91,26 @@
   .search-kbd { display: none; }
 }
 
-/* ---------- Móviles grandes ---------- */
+/* ---------- Móviles ---------- */
 @media (max-width: 768px) {
   body { font-size: 14px; }
 
-  .content { padding: 16px 16px 96px; }
-  .topbar { padding: 10px 16px; gap: 10px; }
-  .topbar-title h1 { font-size: 1.15rem; }
+  .content { padding: 16px 16px 100px; }
+
+  .topbar {
+    gap: 8px 10px;
+    padding: 10px 16px;
+  }
+
+  .topbar-title h1 { font-size: 1.2rem; }
   .topbar-title p { display: none; }
   .topbar-add { display: none; }
+
+  /* El buscador se despliega con su botón para no ocupar espacio fijo */
+  .topbar .search-toggle { display: inline-grid; }
+  .global-search { display: none; }
+  .topbar.search-open .global-search { display: block; }
+  .topbar.search-open .search-toggle { background: var(--primary-soft); color: var(--primary); }
 
   .month-picker {
     order: 11;
@@ -98,26 +121,36 @@
   .view.is-active,
   .grid { gap: 16px; }
 
-  .card { padding: 18px; border-radius: var(--radius); }
+  .card { padding: 18px; border-radius: var(--radius-lg); }
   .grid-2,
   .grid-3 { grid-template-columns: 1fr; }
   .grid-3 > :last-child:nth-child(odd) { grid-column: auto; }
 
   .kpi-grid { gap: 12px; }
-  .kpi-grid-3 { grid-template-columns: 1fr; }
+  .kpi-grid-3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .kpi-grid-3 > :last-child { grid-column: span 2; }
   .kpi { padding: 16px; }
-  .kpi-value { font-size: 1.25rem; }
+  .kpi-value { font-size: 1.3rem; }
 
-  .hero-card { padding: 22px; }
+  .hero-card {
+    display: flex;
+    padding: 22px;
+  }
+
+  .hero-spark { align-self: stretch; }
 
   .summary-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .summary-item { padding: 14px 16px; }
+  .summary-item:nth-child(3) { border-left: 0; }
+  .summary-item:nth-child(n + 3) { border-top: 1px solid var(--border); }
+  .summary-item strong { font-size: 1.1rem; }
 
-  /* Filtros plegables: solo se ve el buscador hasta pulsar "Mostrar" */
+  /* Filtros plegables: solo se ve el buscador hasta pulsar "Filtros" */
   .filters-toggle { display: inline-flex; }
-  .filters-card:not(.is-open) .filters-grid > .field:not(.field-search) { display: none; }
-  .card.table-card { padding: 0; }
+  .filters-card:not(.is-open) .filters-grid { display: none; }
   .filters-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .field-search { grid-column: span 2; }
+  .filters-bar { flex-wrap: wrap; }
+  .filter-search { flex-basis: 100%; }
 
   .page-actions .btn { flex: 1; }
 
@@ -132,13 +165,13 @@
     z-index: 40;
     display: grid;
     place-items: center;
-    width: 56px;
-    height: 56px;
+    width: 58px;
+    height: 58px;
     border: 0;
     border-radius: 18px;
-    background: var(--primary);
+    background: linear-gradient(180deg, color-mix(in srgb, var(--primary) 85%, #fff), var(--primary));
     color: #fff;
-    box-shadow: 0 12px 28px -8px var(--primary);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25), 0 14px 30px -10px var(--primary);
     transition: transform 0.2s var(--ease);
   }
 
@@ -148,13 +181,13 @@
   .toast-container {
     left: 16px;
     right: 16px;
-    bottom: 88px;
+    bottom: 92px;
     align-items: stretch;
   }
 
   .toast { max-width: none; }
 
-  /* --- Tabla de movimientos → tarjetas --- */
+  /* --- Movimientos: cada fila pasa a ser una tarjeta de dos líneas --- */
   .tx-table thead { display: none; }
 
   .tx-table,
@@ -163,10 +196,16 @@
   .tx-table tr {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
-    gap: 6px 12px;
+    grid-template-areas:
+      "concept amount"
+      "category actions";
+    align-items: center;
+    gap: 8px 12px;
     padding: 14px 16px;
     border-bottom: 1px solid var(--border);
   }
+
+  .tx-table tbody tr:last-child { border-bottom: 0; }
 
   .tx-table td {
     display: block;
@@ -174,23 +213,16 @@
     border: 0 !important;
   }
 
-  .tx-table td[data-label="Concepto"] { grid-column: 1; grid-row: 1; }
-  .tx-table td[data-label="Cantidad"] { grid-column: 2; grid-row: 1; align-self: center; font-size: 1rem; }
+  .tx-table td[data-label="Concepto"] { grid-area: concept; min-width: 0; }
+  .tx-table td[data-label="Cantidad"] { grid-area: amount; font-size: 1rem; }
+  .tx-table td[data-label="Categoría"] { grid-area: category; padding-left: 46px; }
+  .tx-table td[data-label="Acciones"] { grid-area: actions; }
   .tx-table td[data-label="Fecha"],
-  .tx-table td[data-label="Categoría"],
-  .tx-table td[data-label="Método"] {
-    grid-column: 1;
-    font-size: 0.8rem;
-    color: var(--text-muted);
-    padding-left: 44px;
-  }
-  .tx-table td[data-label="Fecha"] { grid-row: 2; }
-  .tx-table td[data-label="Categoría"] { grid-row: 3; }
-  .tx-table td[data-label="Método"] { grid-row: 4; }
-  .tx-table td[data-label="Tipo"] { grid-column: 2; grid-row: 2; text-align: right; }
-  .tx-table td[data-label="Acciones"] { grid-column: 2; grid-row: 3 / span 2; align-self: end; }
+  .tx-table td[data-label="Tipo"],
+  .tx-table td[data-label="Método"] { display: none; }
 
   .concept-cell { min-width: 0; }
+  .concept-cell .concept-meta { display: block; }
   .concept-cell small { max-width: 100%; }
 
   /* --- Tabla anual → tarjetas con etiquetas --- */
@@ -209,7 +241,7 @@
   }
 
   .year-table tr.is-selected { background: var(--primary-soft); }
-  .year-table tr.is-selected td { background: none; }
+  .year-table tr.is-selected td { background: none; box-shadow: none !important; }
 
   .year-table td {
     display: flex;
@@ -217,6 +249,7 @@
     gap: 8px;
     padding: 0 !important;
     border: 0 !important;
+    background: none !important;
     font-size: 0.85rem;
   }
 
@@ -232,7 +265,7 @@
   }
 
   .year-table td:first-child::before { content: none; }
-  .year-table tfoot tr { border-top: 2px solid var(--border-strong); }
+  .year-table tfoot tr { background: var(--surface-2); }
 
   .data-action,
   .danger-zone {
@@ -248,9 +281,11 @@
   .banner .btn { order: 3; flex: 1; }
 
   .alert { flex-wrap: wrap; }
+
+  .goal-progress { gap: 16px; }
 }
 
-/* ---------- Móviles ---------- */
+/* ---------- Móviles estrechos ---------- */
 @media (max-width: 560px) {
   .modal,
   .modal-sm {
@@ -258,7 +293,7 @@
     max-width: 100%;
     max-height: 92vh;
     margin: auto 0 0;
-    border-radius: 22px 22px 0 0;
+    border-radius: 24px 24px 0 0;
   }
 
   .modal[open] { animation: sheetIn 0.35s var(--ease); }
@@ -271,28 +306,26 @@
 
   .form-grid { grid-template-columns: 1fr; }
   .span-2 { grid-column: auto; }
+  .amount-row { grid-template-columns: 1fr; }
+  .amount-row input[type="date"] { min-height: 42px; }
 
   .stat-grid { grid-template-columns: 1fr; }
   .hero-actions .btn { flex: 1; }
 
-  .budget-figures strong { font-size: 1.1rem; }
   .budget-figures { gap: 8px; }
+  .budget-figures strong { font-size: 1.2rem; }
 
-  .filters-grid { grid-template-columns: 1fr 1fr; gap: 10px; }
-
-  .input-group { flex-direction: column; }
-
-  .theme-options { grid-template-columns: 1fr 1fr; }
+  .filters-grid { gap: 10px; }
 
   .month-label { min-width: 0; }
 }
 
-@media (max-width: 400px) {
+@media (max-width: 380px) {
   .kpi-grid-2,
+  .kpi-grid-3,
   .kpi-grid-4 { grid-template-columns: 1fr; }
-  .summary-strip { grid-template-columns: 1fr 1fr; }
+  .kpi-grid-3 > :last-child { grid-column: auto; }
   .filters-grid { grid-template-columns: 1fr; }
-  .field-search { grid-column: auto; }
 }
 
 @keyframes sheetIn {

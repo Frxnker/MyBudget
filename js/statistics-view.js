@@ -26,7 +26,7 @@ const StatsView = (() => {
         <td data-label="Mes"><button class="link-button" data-action="select-month" data-id="${escapeHTML(m.key)}">${monthLabel(m.key).split(' ')[0]}</button></td>
         <td data-label="Ingresos" class="td-amount amount-income">${formatMoney(m.income)}</td>
         <td data-label="Gastos" class="td-amount amount-expense">${formatMoney(m.expense)}</td>
-        <td data-label="Ahorro" class="td-amount">${formatMoney(m.savings, { sign: true })}</td>
+        <td data-label="Ahorro" class="td-amount ${m.savings < 0 ? 'amount-negative' : ''}">${formatMoney(m.savings, { sign: true })}</td>
         <td data-label="% ahorro" class="td-amount">${m.income ? formatPercent(m.rate) : '—'}</td>
       </tr>`;
     return `
@@ -55,19 +55,16 @@ const StatsView = (() => {
     const trends = Stats.monthTrends(key);
 
     view.innerHTML = `
-      <div class="section-header">
-        <div>
-          <h2>${monthLabel(key)}</h2>
-          <p class="muted">Usa el selector de mes de la parte superior para cambiar el periodo</p>
-        </div>
-      </div>
-
       <div class="kpi-grid kpi-grid-4">
-        <div class="kpi kpi-income"><span class="kpi-label">Ingresos</span><strong class="kpi-value">${formatMoney(month.income)}</strong>${UI.trendBadge(trends.income, true)}</div>
-        <div class="kpi kpi-expense"><span class="kpi-label">Gastos</span><strong class="kpi-value">${formatMoney(month.expense)}</strong>${UI.trendBadge(trends.expense, false)}</div>
-        <div class="kpi kpi-savings"><span class="kpi-label">Ahorro</span><strong class="kpi-value">${formatMoney(month.savings)}</strong>${UI.trendBadge(trends.savings, true)}</div>
-        <div class="kpi"><span class="kpi-label">Gasto medio diario</span><strong class="kpi-value">${formatMoney(month.avgDaily)}</strong>
-          <span class="kpi-foot muted">${month.maxDay ? `Día con más gasto: ${formatDate(month.maxDay.date, 'dayMonth')} (${formatMoney(month.maxDay.total)})` : 'Sin gastos este mes'}</span></div>
+        ${UI.kpi({ label: 'Ingresos', value: UI.money(month.income), icon: 'arrowUpRight', tone: 'income', foot: UI.trendBadge(trends.income, true) })}
+        ${UI.kpi({ label: 'Gastos', value: UI.money(month.expense), icon: 'arrowDownRight', tone: 'expense', foot: UI.trendBadge(trends.expense, false) })}
+        ${UI.kpi({ label: 'Ahorro', value: UI.money(month.savings), icon: 'coins', tone: 'savings', foot: UI.trendBadge(trends.savings, true) })}
+        ${UI.kpi({
+          label: 'Gasto medio diario',
+          value: UI.money(month.avgDaily),
+          icon: 'calendar',
+          foot: `<span class="muted">${month.maxDay ? `Día con más gasto: ${formatDate(month.maxDay.date, 'dayMonth')} (${formatMoney(month.maxDay.total)})` : 'Sin gastos este mes'}</span>`,
+        })}
       </div>
 
       <div class="grid grid-1-2">
@@ -79,7 +76,7 @@ const StatsView = (() => {
           </div>
           <ul class="chart-legend" id="stats-categories-legend"></ul>
         </section>
-        <section class="card">
+        <section class="card card-chart">
           <h2 class="card-title">${Icons.get('calendar', 18)}Gastos diarios</h2>
           <div class="chart-box chart-lg"><canvas id="stats-daily" role="img" aria-label="Gastos de cada día del mes"></canvas></div>
         </section>
@@ -98,16 +95,16 @@ const StatsView = (() => {
       </div>
 
       <div class="stat-grid">
-        ${statCard('calendar', 'Gasto medio diario', formatMoney(y.avgDaily), `en ${year}`)}
-        ${statCard('chart', 'Gasto medio mensual', formatMoney(y.avgMonthly), `en ${year}`)}
+        ${statCard('calendar', 'Gasto medio diario', UI.money(y.avgDaily), `en ${year}`)}
+        ${statCard('chart', 'Gasto medio mensual', UI.money(y.avgMonthly), `en ${year}`)}
         ${statCard('tag', 'Categoría con más gasto', y.topCategory ? `${escapeHTML(y.topCategory.category.icon)} ${escapeHTML(y.topCategory.category.name)}` : '—',
           y.topCategory ? `${formatMoney(y.topCategory.total)} · ${formatPercent(y.topCategory.pct, 0)} del total` : 'Sin gastos')}
-        ${statCard('receipt', 'Mayor gasto individual', y.biggest ? formatMoney(y.biggest.amount) : '—',
+        ${statCard('receipt', 'Mayor gasto individual', y.biggest ? UI.money(y.biggest.amount) : '—',
           y.biggest ? `${escapeHTML(y.biggest.concept)} · ${formatDate(y.biggest.date)}` : 'Sin gastos')}
         ${statCard('alert', 'Día con mayor gasto', y.maxDay ? formatDate(y.maxDay.date) : '—', y.maxDay ? formatMoney(y.maxDay.total) : 'Sin gastos')}
-        ${statCard('arrowDownRight', 'Total gastado', formatMoney(y.expense), `${y.count} movimientos en ${year}`)}
-        ${statCard('arrowUpRight', 'Total ingresado', formatMoney(y.income), `en ${year}`)}
-        ${statCard('coins', 'Total ahorrado', formatMoney(y.savings), y.income ? `${formatPercent(y.rate)} de tus ingresos` : `en ${year}`)}
+        ${statCard('arrowDownRight', 'Total gastado', UI.money(y.expense), `${y.count} movimientos en ${year}`)}
+        ${statCard('arrowUpRight', 'Total ingresado', UI.money(y.income), `en ${year}`)}
+        ${statCard('coins', 'Total ahorrado', UI.money(y.savings), y.income ? `${formatPercent(y.rate)} de tus ingresos` : `en ${year}`)}
       </div>
 
       <section class="card">

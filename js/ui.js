@@ -41,6 +41,10 @@ const UI = (() => {
       });
     }
     setTimeout(remove, duration);
+
+    // Como máximo 3 avisos a la vez: si hay más, se cierra el más antiguo
+    const visible = [...container.querySelectorAll('.toast:not(.is-leaving)')];
+    if (visible.length > 3) visible[0].querySelector('.toast-close').click();
   }
 
   /* ---------------------------------------------------------------
@@ -201,15 +205,100 @@ const UI = (() => {
   }
 
   /**
-   * Barra de progreso. "level" puede ser ok | warn | over | goal
+   * Barra de progreso. "level" puede ser ok | warn | over | goal.
+   * "marker" (opcional) dibuja una marca vertical en ese porcentaje, p. ej. el ritmo de gasto ideal.
    */
-  function progressBar(pct, level = 'ok', label = '') {
+  function progressBar(pct, level = 'ok', label = '', { marker = null, markerLabel = '' } = {}) {
     const width = Utils.clamp(pct, 0, 100);
     return `
       <div class="progress progress-${level}" role="progressbar" aria-valuemin="0" aria-valuemax="100"
            aria-valuenow="${Math.round(pct)}" ${label ? `aria-label="${escapeHTML(label)}"` : ''}>
-        <div class="progress-bar" style="--progress:${width}%"></div>
+        <div class="progress-track"><div class="progress-bar" style="--progress:${width}%"></div></div>
+        ${marker === null ? '' : `<span class="progress-marker" style="--marker:${Utils.clamp(marker, 0, 100)}%" title="${escapeHTML(markerLabel)}"></span>`}
       </div>`;
+  }
+
+  /** Anillo de progreso circular en SVG (objetivos de ahorro) */
+  function ring(pct, { size = 64, stroke = 7, label = '' } = {}) {
+    const center = size / 2;
+    const radius = (size - stroke) / 2;
+    const length = 2 * Math.PI * radius;
+    const offset = length * (1 - Utils.clamp(pct, 0, 100) / 100);
+    return `
+      <svg class="ring" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" role="img" aria-label="${escapeHTML(label)}">
+        <circle class="ring-track" cx="${center}" cy="${center}" r="${radius}" stroke-width="${stroke}" fill="none"/>
+        <circle class="ring-value" cx="${center}" cy="${center}" r="${radius}" stroke-width="${stroke}" fill="none"
+          stroke-linecap="round" stroke-dasharray="${length.toFixed(2)}" stroke-dashoffset="${offset.toFixed(2)}"
+          style="--ring-length:${length.toFixed(2)}" transform="rotate(-90 ${center} ${center})"/>
+      </svg>`;
+  }
+
+  /**
+   * Mini gráfica de línea en SVG, sin Chart.js (p. ej. la evolución del saldo).
+   * Ocupa todo el ancho disponible con una altura fija (la define el CSS) y toma el color de "currentColor".
+   * El punto final es un elemento aparte para que no se deforme al estirar la gráfica.
+   */
+  let sparklineCount = 0;
+  function sparkline(values, { label = '' } = {}) {
+    if (values.length < 2) return '';
+    const width = 100;
+    const height = 40;
+    const min = Math.min(...values);
+    const range = Math.max(...values) - min || 1;
+    const points = values.map((value, i) => [
+      (i / (values.length - 1)) * width,
+      4 + (height - 8) * (1 - (value - min) / range),
+    ]);
+    const line = points.map(([x, y], i) => `${i ? 'L' : 'M'}${x.toFixed(2)} ${y.toFixed(2)}`).join(' ');
+    const [lastX, lastY] = points[points.length - 1];
+    const gradient = `sparkline-${++sparklineCount}`;
+    return `
+      <div class="sparkline" role="img" aria-label="${escapeHTML(label)}">
+        <svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" aria-hidden="true">
+          <defs>
+            <linearGradient id="${gradient}" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="currentColor" stop-opacity="0.3"/>
+              <stop offset="1" stop-color="currentColor" stop-opacity="0"/>
+            </linearGradient>
+          </defs>
+          <path d="${line} L${width} ${height} L0 ${height} Z" fill="url(#${gradient})"/>
+          <path d="${line}" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"
+            stroke-linejoin="round" vector-effect="non-scaling-stroke"/>
+        </svg>
+        <span class="sparkline-dot" style="left:${lastX.toFixed(2)}%;top:${((lastY / height) * 100).toFixed(2)}%"></span>
+      </div>`;
+  }
+
+  /**
+   * Cantidad destacada: los céntimos y el símbolo se muestran más pequeños (1.250,50 €).
+   * Para cifras grandes (KPIs, saldo…); en tablas y listas se usa Utils.formatMoney.
+   */
+  function money(cents, { sign = false } = {}) {
+    const p = Utils.moneyParts(cents, { sign });
+    return `<span class="money">${p.sign}${p.integer}<span class="money-minor">,${p.decimals} €</span></span>`;
+  }
+
+  /** Tarjeta de indicador (KPI). "value" y "foot" pueden contener HTML generado por la app */
+  function kpi({ label, value, icon = '', tone = '', foot = '' }) {
+    return `
+      <div class="kpi ${tone ? `kpi-${tone}` : ''}">
+        <div class="kpi-top">
+          ${icon ? `<span class="kpi-icon">${Icons.get(icon, 16)}</span>` : ''}
+          <span class="kpi-label">${label}</span>
+        </div>
+        <strong class="kpi-value">${value}</strong>
+        ${foot ? `<div class="kpi-foot">${foot}</div>` : ''}
+      </div>`;
+  }
+
+  /** Fecha con aspecto de hoja de calendario (mes + día) */
+  function dateTile(iso) {
+    return `<span class="date-tile" aria-hidden="true"><small>${Utils.monthLabel(iso.slice(0, 7), true)}</small><strong>${Number(iso.slice(8, 10))}</strong></span>`;
+  }
+
+  /** Etiqueta de categoría con un punto de su color */
+  function categoryChip(category) {
+    return `<span class="cat-chip" style="--cat-color:${category.color}"><span class="cat-dot"></span>${escapeHTML(category.name)}</span>`;
   }
 
   /** Icono circular de categoría con su color */
@@ -225,10 +314,11 @@ const UI = (() => {
     if (Math.abs(change) < 0.05) return '<span class="trend trend-neutral">Igual que el mes anterior</span>';
     const up = change > 0;
     const good = up === goodWhenUp;
-    return `<span class="trend ${good ? 'trend-good' : 'trend-bad'}">
-      ${Icons.get(up ? 'trendUp' : 'trendDown', 14)}
-      ${up ? '+' : ''}${Utils.formatPercent(change)} <span class="muted">vs. mes anterior</span>
-    </span>`;
+    return `
+      <span class="trend ${good ? 'trend-good' : 'trend-bad'}">
+        <span class="trend-chip">${Icons.get(up ? 'arrowUp' : 'arrowDown', 12)}${Utils.formatPercent(Math.abs(change))}</span>
+        <span class="trend-text">vs. mes anterior</span>
+      </span>`;
   }
 
   /** Estado de "cargando" en un botón */
@@ -253,6 +343,7 @@ const UI = (() => {
   return {
     toast, openModal, closeModal, initModals, isAnyModalOpen, confirm,
     clearErrors, showErrors, liveClearErrors, validateAmount,
-    emptyState, budgetLevel, progressBar, categoryBadge, trendBadge, setLoading, fillSelect,
+    emptyState, budgetLevel, progressBar, ring, sparkline, money, kpi, dateTile, categoryChip,
+    categoryBadge, trendBadge, setLoading, fillSelect,
   };
 })();

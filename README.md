@@ -3,7 +3,7 @@
 Aplicación web para controlar ingresos, gastos, presupuestos, gastos recurrentes y objetivos de ahorro.
 Funciona **completamente en el navegador**: sin backend, sin servidor y sin base de datos. Los datos se guardan en **LocalStorage**.
 
-Proyecto de DAW hecho con HTML5, CSS3 y JavaScript vanilla. Las gráficas usan [Chart.js](https://www.chartjs.org/) (licencia MIT), incluido en el proyecto en `js/vendor/`, así que funcionan sin conexión.
+Proyecto de DAW hecho con HTML5, CSS3 y JavaScript vanilla. Las gráficas usan [Chart.js](https://www.chartjs.org/) (licencia MIT) y la tipografía es [Plus Jakarta Sans](https://github.com/tokotype/PlusJakartaSans) (licencia OFL). Las dos van incluidas en el proyecto, así que la app no hace ninguna petición a Internet.
 
 ---
 
@@ -14,7 +14,7 @@ Proyecto de DAW hecho con HTML5, CSS3 y JavaScript vanilla. Las gráficas usan [
 
 No hace falta instalar nada. La primera vez se cargan datos de ejemplo para que el dashboard no aparezca vacío. Puedes borrarlos desde el aviso del dashboard o desde **Configuración → Datos de ejemplo**.
 
-> Sin conexión todo sigue funcionando, gráficas incluidas. Lo único que se carga de Internet es la fuente Plus Jakarta Sans; si no está disponible, se usa la fuente del sistema.
+> No necesita conexión: todo (gráficas y fuente incluidas) se carga desde los archivos del proyecto.
 > Si prefieres servirla con un servidor local: `npx serve .` o la extensión *Live Server* de VS Code.
 
 ---
@@ -53,6 +53,7 @@ MyBudget/
 ├── index.html               # Estructura HTML, modales y carga de scripts
 ├── README.md
 ├── assets/
+│   ├── fonts/               # Plus Jakarta Sans (woff2) y su licencia (OFL.txt)
 │   └── icons/
 │       └── logo.svg         # Logo y favicon
 ├── css/
@@ -113,6 +114,22 @@ Formulario → módulo (Transactions, Budget…) → Store.set() → LocalStorag
 - **`Stats` (statistics.js)** solo calcula: recibe datos y devuelve números. Las vistas y las gráficas usan esos resultados.
 - **Acciones con `data-action`**: los botones generados dinámicamente llevan `data-action="edit-tx" data-id="…"`. Un único listener en `document` (app.js) busca la acción en un mapa que reúne las acciones de todos los módulos. Así no hay que añadir listeners a cada botón después de pintar.
 
+### Diseño
+- **Variables CSS** (`:root` en `style.css`): colores, sombras y radios se definen una sola vez. El tema oscuro solo redefine esas variables, también las de las gráficas.
+- **Identidad**: índigo como color principal y lima como acento sobre fondos oscuros (barra lateral, tarjeta del saldo). Los ingresos van en verde; los gastos, en el color del texto, y el rojo se reserva para lo que requiere atención (presupuesto superado, exceso).
+- **Cifras destacadas** con `UI.money()`: los céntimos y el símbolo `€` se muestran más pequeños (`1.250,50 €`) para que la cifra importante se lea de un vistazo.
+- **Componentes reutilizables** en `ui.js`: `kpi`, `progressBar` (con marca de ritmo ideal), `ring` (anillo de progreso), `sparkline` (mini gráfica SVG), `dateTile` (fecha tipo calendario), `categoryChip`, `trendBadge`, `emptyState`…
+- **Animaciones** solo al entrar en una sección (clase `.is-entering`); al cambiar los datos la vista se actualiza sin repetirlas. Se respetan las preferencias de movimiento reducido del sistema.
+
+### Rendimiento
+- **Sin peticiones externas**: la fuente y Chart.js son archivos locales, así que nada bloquea el primer pintado.
+- **Índices en memoria** (`transactions.js`): los movimientos se agrupan por mes y por fecha una sola vez y solo se recalculan cuando cambia la lista. Las estadísticas ya no recorren todos los movimientos en cada consulta.
+- **Repintado agrupado** (`app.js`): varios cambios seguidos de los datos producen un único repintado en el siguiente *frame* (`requestAnimationFrame`).
+- **Gráficas reutilizadas** (`charts.js`): al repintar una vista no se destruye la gráfica. Se reutiliza su lienzo y se actualizan los datos, de modo que Chart.js anima la transición en lugar de redibujar desde cero.
+- **Iconos en un sprite SVG** (`icons.js`): cada icono se define una vez y se reutiliza con `<use>`.
+
+Con 5.000 movimientos, pintar cualquier sección tarda menos de 5 ms en un portátil actual.
+
 ### SPA con hash
 Cada sección es un `<section class="view">` dentro de `index.html`. La URL usa el hash (`#/movimientos`, `#/objetivos`…) y al cambiarlo se muestra la vista correspondiente sin recargar la página. Los botones de atrás y adelante del navegador también funcionan.
 
@@ -157,12 +174,13 @@ Los registros de ejemplo llevan `demo: true`. Así se pueden borrar sin tocar lo
 ## Funcionalidades implementadas
 
 **Dashboard**
-- Saldo actual acumulado, ingresos, gastos, ahorro y porcentaje de ahorro del mes seleccionado.
-- Tendencia de cada indicador respecto al mes anterior.
+- Saldo actual acumulado, su variación en el mes y una mini gráfica con su evolución en los últimos 6 meses.
+- Ingresos, gastos, ahorro y porcentaje de ahorro del mes seleccionado, con su tendencia respecto al mes anterior.
 - Avisos de presupuesto superado.
-- Gráfica de evolución de 6 meses y gráfica de gastos por categoría.
-- Últimos movimientos, próximos pagos, presupuesto del mes, categorías con más gasto y objetivos.
+- Gráfica de barras de ingresos y gastos de los últimos 6 meses y gráfica de gastos por categoría.
+- Últimos movimientos, próximos pagos, presupuesto del mes, ranking de categorías con más gasto y objetivos.
 - Botones de "Añadir gasto" y "Añadir ingreso".
+- Resumen del gasto del mes en la barra lateral, visible desde cualquier sección.
 
 **Movimientos**
 - Alta, edición, duplicado y borrado (con confirmación) de gastos e ingresos. Tras borrar, el toast permite **deshacer**.
@@ -178,6 +196,7 @@ Los registros de ejemplo llevan `demo: true`. Así se pueden borrar sin tocar lo
 
 **Presupuestos**
 - Presupuesto mensual con barra de progreso de colores (verde, ámbar, rojo) y aviso al superarlo.
+- Marca en la barra con el gasto "ideal" a día de hoy (el presupuesto repartido por igual cada día).
 - Cantidad disponible por día para el resto del mes.
 - Límites por categoría con lo gastado y lo disponible, y el aviso "Has superado tu presupuesto de ocio".
 - Lista de categorías con gasto pero sin límite, con acceso directo para crear uno.
@@ -194,7 +213,7 @@ Los registros de ejemplo llevan `demo: true`. Así se pueden borrar sin tocar lo
 
 **Objetivos**
 - Crear, editar y borrar objetivos con fecha límite opcional.
-- Aportar o retirar dinero, con barra de progreso y aviso al completar un objetivo.
+- Aportar o retirar dinero, con anillo de progreso y aviso al completar un objetivo.
 - Cuánto hay que ahorrar al mes para llegar a la fecha límite.
 
 **Configuración**
@@ -204,9 +223,9 @@ Los registros de ejemplo llevan `demo: true`. Así se pueden borrar sin tocar lo
 - Cargar o borrar los datos de ejemplo y ver cuánto espacio ocupan los datos.
 
 **Experiencia de usuario**
-- Diseño responsive: sidebar en escritorio, menú desplegable en tablet y móvil, modales tipo *bottom sheet* en móvil y botón flotante para añadir.
+- Diseño responsive: sidebar en escritorio, menú desplegable en tablet y móvil, modales tipo *bottom sheet* en móvil, buscador plegable y botón flotante para añadir.
 - Modo claro y oscuro, que también se aplica a las gráficas.
-- Toasts, confirmaciones, estados vacíos, estado de carga y validaciones con mensajes bajo cada campo.
+- Toasts (como máximo 3 a la vez), confirmaciones, estados vacíos, estado de carga y validaciones con mensajes bajo cada campo.
 - Las cantidades aceptan coma o punto decimal y separadores de miles, en cualquier idioma del navegador.
 - Si la app está abierta en varias pestañas, los cambios de una se ven al momento en las demás.
 - Buscador global (movimientos, objetivos, recurrentes y secciones) que se puede usar con las flechas del teclado.
@@ -217,7 +236,7 @@ Los registros de ejemplo llevan `demo: true`. Así se pueden borrar sin tocar lo
 
 ## Posibles mejoras futuras
 
-- Convertir la app en PWA (manifest y *service worker*) para instalarla y usarla sin conexión.
+- Convertir la app en PWA (manifest y *service worker*) para poder instalarla en el móvil o el escritorio. Requiere servirla desde un servidor web, porque los *service workers* no funcionan con `file://`.
 - Registrar automáticamente los pagos recurrentes vencidos, preguntando antes al usuario.
 - Presupuestos distintos para cada mes y traspaso del sobrante al mes siguiente.
 - Varias cuentas o carteras (banco, efectivo, tarjeta) con traspasos entre ellas.

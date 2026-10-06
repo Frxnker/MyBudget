@@ -149,6 +149,8 @@ const Goals = (() => {
 
   function cardHTML(goal) {
     const p = progress(goal);
+    const id = escapeHTML(goal.id);
+    const name = escapeHTML(goal.name);
     let deadlineText = '';
     if (goal.deadline) {
       deadlineText = p.completed
@@ -162,22 +164,26 @@ const Goals = (() => {
         <header class="goal-header">
           <span class="goal-icon" aria-hidden="true">${escapeHTML(goal.icon)}</span>
           <div class="grow">
-            <h3>${escapeHTML(goal.name)}</h3>
+            <h3>${name}</h3>
             ${p.completed ? '<span class="pill pill-income">🎉 Completado</span>' : `<span class="muted">Faltan ${formatMoney(p.remaining)}</span>`}
           </div>
           <div class="card-actions">
-            <button class="btn-icon btn-icon-sm" data-action="edit-goal" data-id="${escapeHTML(goal.id)}" aria-label="Editar ${escapeHTML(goal.name)}">${Icons.get('edit', 16)}</button>
-            <button class="btn-icon btn-icon-sm btn-icon-danger" data-action="delete-goal" data-id="${escapeHTML(goal.id)}" aria-label="Eliminar ${escapeHTML(goal.name)}">${Icons.get('trash', 16)}</button>
+            <button class="btn-icon btn-icon-sm" data-action="edit-goal" data-id="${id}" aria-label="Editar ${name}">${Icons.get('edit', 16)}</button>
+            <button class="btn-icon btn-icon-sm btn-icon-danger" data-action="delete-goal" data-id="${id}" aria-label="Eliminar ${name}">${Icons.get('trash', 16)}</button>
           </div>
         </header>
-        <div class="goal-figures">
-          <div><span>Ahorrado</span><strong>${formatMoney(goal.saved)}</strong></div>
-          <div><span>Objetivo</span><strong>${formatMoney(goal.target)}</strong></div>
-          <div><span>Progreso</span><strong>${formatPercent(p.pct)}</strong></div>
+        <div class="goal-progress">
+          <div class="goal-ring">
+            ${UI.ring(p.pct, { size: 92, stroke: 9, label: `Progreso de ${goal.name}: ${formatPercent(p.pct)}` })}
+            <strong class="goal-ring-label">${formatPercent(p.pct)}</strong>
+          </div>
+          <dl class="goal-figures">
+            <div><dt>Ahorrado</dt><dd>${UI.money(goal.saved)}</dd></div>
+            <div><dt>Objetivo</dt><dd>${formatMoney(goal.target)}</dd></div>
+          </dl>
         </div>
-        ${UI.progressBar(p.pct, 'goal', `Progreso de ${goal.name}`)}
         ${deadlineText ? `<p class="goal-deadline">${Icons.get('calendar', 16)}<span>${deadlineText}</span></p>` : ''}
-        <button class="btn btn-ghost btn-block" data-action="contribute-goal" data-id="${escapeHTML(goal.id)}">${Icons.get('coins', 16)}Actualizar ahorro</button>
+        <button class="btn btn-ghost btn-block" data-action="contribute-goal" data-id="${id}">${Icons.get('coins', 16)}Actualizar ahorro</button>
       </article>`;
   }
 
@@ -194,22 +200,26 @@ const Goals = (() => {
     }
     const totalSaved = Utils.sumBy(goals, (g) => g.saved);
     const totalTarget = Utils.sumBy(goals, (g) => g.target);
+    const globalPct = percent(totalSaved, totalTarget);
     const completed = goals.filter((g) => g.saved >= g.target).length;
+
+    // Primero los pendientes con más progreso; los completados al final
+    const sorted = goals
+      .map((goal) => ({ goal, p: progress(goal) }))
+      .sort((a, b) => a.p.completed - b.p.completed || b.p.pct - a.p.pct)
+      .map((x) => x.goal);
 
     view.innerHTML = `
       <div class="kpi-grid kpi-grid-3">
-        <div class="kpi"><span class="kpi-label">Total ahorrado</span><strong class="kpi-value">${formatMoney(totalSaved)}</strong><span class="kpi-foot muted">de ${formatMoney(totalTarget)}</span></div>
-        <div class="kpi"><span class="kpi-label">Progreso global</span><strong class="kpi-value">${formatPercent(percent(totalSaved, totalTarget))}</strong>${UI.progressBar(percent(totalSaved, totalTarget), 'goal')}</div>
-        <div class="kpi"><span class="kpi-label">Completados</span><strong class="kpi-value">${completed} / ${goals.length}</strong><span class="kpi-foot muted">objetivos</span></div>
+        ${UI.kpi({ label: 'Total ahorrado', value: UI.money(totalSaved), icon: 'coins', tone: 'savings', foot: `<span class="muted">de ${formatMoney(totalTarget)}</span>` })}
+        ${UI.kpi({ label: 'Progreso global', value: formatPercent(globalPct), icon: 'target', foot: UI.progressBar(globalPct, 'goal', 'Progreso global') })}
+        ${UI.kpi({ label: 'Completados', value: `${completed}<span class="kpi-value-minor"> / ${goals.length}</span>`, icon: 'check', tone: 'income', foot: '<span class="muted">objetivos alcanzados</span>' })}
       </div>
       <div class="section-header">
         <h2>Tus objetivos</h2>
         <button class="btn btn-primary" data-action="add-goal">${Icons.get('plus', 18)}Nuevo objetivo</button>
       </div>
-      <div class="goal-grid">${goals
-        .slice()
-        .sort((a, b) => progress(a).completed - progress(b).completed || progress(b).pct - progress(a).pct)
-        .map(cardHTML).join('')}</div>`;
+      <div class="goal-grid">${sorted.map(cardHTML).join('')}</div>`;
   }
 
   const actions = {
