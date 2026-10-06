@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tests MyBudget</title>
+  <style>
+    :root {
+      --bg: #f4f4f8;
+      --surface: #ffffff;
+      --border: #e6e7ee;
+      --text: #14151c;
+      --muted: #6b6f80;
+      --ok: #12804f;
+      --ok-soft: #e2f5eb;
+      --fail: #cf3438;
+      --fail-soft: #fde9e9;
+      color-scheme: light;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0c0d12;
+        --surface: #15161e;
+        --border: #262836;
+        --text: #ecedf3;
+        --muted: #8d91a4;
+        --ok: #3fcf8e;
+        --ok-soft: rgba(63, 207, 142, 0.12);
+        --fail: #ff7477;
+        --fail-soft: rgba(255, 116, 119, 0.12);
+        color-scheme: dark;
+      }
+    }
+
+    body {
+      max-width: 860px;
+      margin: 0 auto;
+      padding: 32px 16px;
+      background: var(--bg);
+      color: var(--text);
+      font: 15px/1.5 system-ui, -apple-system, 'Segoe UI', sans-serif;
+    }
+
+    h1 { margin: 0 0 4px; font-size: 1.5rem; }
+    .muted { color: var(--muted); margin: 0 0 24px; }
+
+    .summary {
+      padding: 14px 18px;
+      border-radius: 12px;
+      font-size: 1.1rem;
+      font-weight: 700;
+    }
+
+    .summary.is-ok { background: var(--ok-soft); color: var(--ok); }
+    .summary.is-fail { background: var(--fail-soft); color: var(--fail); }
+
+    .group {
+      margin-top: 12px;
+      padding: 12px 16px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: var(--surface);
+    }
+
+    .group summary { cursor: pointer; font-weight: 700; }
+    .count { color: var(--muted); font-weight: 500; }
+    .group ul { margin: 10px 0 0; padding: 0; list-style: none; }
+    .group li { padding: 4px 0; }
+    .ok { color: var(--ok); }
+    .fail { color: var(--fail); }
+
+    pre {
+      margin: 6px 0 0;
+      padding: 8px 10px;
+      border-radius: 8px;
+      background: var(--fail-soft);
+      white-space: pre-wrap;
+      font-size: 0.85rem;
+    }
+  </style>
+
+  <!--
+    Sustituimos LocalStorage por un almacén en memoria ANTES de cargar la app.
+    Al abrir archivos con file:// todas las páginas comparten el mismo LocalStorage,
+    así que sin esto los tests borrarían los datos reales de la aplicación.
+  -->
+  <script>
+    (function () {
+      const memory = new Map();
+      Storage.prototype.getItem = function (key) { return memory.has(key) ? memory.get(key) : null; };
+      Storage.prototype.setItem = function (key, value) { memory.set(key, String(value)); };
+      Storage.prototype.removeItem = function (key) { memory.delete(key); };
+      Storage.prototype.clear = function () { memory.clear(); };
+    })();
+  </script>
+</head>
+<body>
+  <h1>Tests de MyBudget</h1>
+  <p class="muted">Cálculos de dinero, fechas de los gastos recurrentes y estadísticas.</p>
+  <div id="results"><p>Ejecutando tests…</p></div>
+
+  <!-- Módulos de la app necesarios para los tests (mismo orden que en index.html) -->
+  <script src="../js/utils.js"></script>
+  <script src="../js/icons.js"></script>
+  <script src="../js/storage.js"></script>
+  <script src="../js/ui.js"></script>
+  <script src="../js/categories.js"></script>
+  <script src="../js/transactions.js"></script>
+  <script src="../js/recurring.js"></script>
+  <script src="../js/statistics.js"></script>
+
+  <!-- Runner y tests -->
+  <script src="runner.js"></script>
+  <script src="tests.js"></script>
+  <script>Test.render();</script>
+</body>
+</html>

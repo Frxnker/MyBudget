@@ -19,6 +19,33 @@ No hace falta instalar nada. La primera vez se cargan datos de ejemplo para que 
 
 ---
 
+## Tests
+
+Abre `tests/index.html` con doble clic en el navegador. Los tests se ejecutan al cargar la página y muestran el resultado de cada grupo; los fallidos aparecen desplegados con el valor esperado y el obtenido. El título de la pestaña también indica el resultado (por ejemplo, `✓ 48/48`).
+
+No hace falta instalar nada: el runner (`tests/runner.js`) es propio y no tiene dependencias. Se prueban:
+
+- `Utils.toCents`: formato español e inglés, miles, redondeo, números de JavaScript y entradas inválidas.
+- `Utils.formatMoney` y `Utils.formatPercent`.
+- `Recurring.occurrences`: todas las frecuencias, el día 31 en meses cortos y los años bisiestos.
+- `Stats`: las funciones puras (`change`, `summarize`, `byCategory`) y los cálculos sobre un conjunto fijo de movimientos de 2024, para que los resultados no dependan del día en que se ejecutan.
+
+La página de tests sustituye LocalStorage por un almacén en memoria antes de cargar la app. Es necesario porque, al abrir archivos con `file://`, todas las páginas comparten el mismo LocalStorage y los tests borrarían tus datos reales.
+
+Para añadir un test, edita `tests/tests.js`:
+
+```js
+describe('Mi módulo', () => {
+  it('hace algo', () => {
+    equal(miFuncion(2), 4);           // igualdad (también arrays y objetos)
+    close(porcentaje(1, 3), 33.333, 0.001); // números con decimales
+    ok(condicion, 'mensaje si falla');
+  });
+});
+```
+
+---
+
 ## Estructura de carpetas
 
 ```text
@@ -50,6 +77,10 @@ MyBudget/
     ├── app.js               # Inicio, navegación SPA, tema, buscador y atajos
     └── vendor/
         └── chart.umd.min.js # Chart.js 4.4.1 (librería externa, licencia MIT)
+tests/
+├── index.html               # Página que ejecuta los tests y muestra los resultados
+├── runner.js                # Mini test runner propio (describe, it, equal…)
+└── tests.js                 # Tests de toCents, formatMoney, recurrentes y estadísticas
 ```
 
 ---

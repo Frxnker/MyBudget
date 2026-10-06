@@ -294,5 +294,5 @@ const Recurring = (() => {
     UI.liveClearErrors(form);
   }
 
-  return { FREQUENCIES, all, upcoming, forMonth, monthlyEquivalent, upcomingItemHTML, render, actions, init };
+  return { FREQUENCIES, all, occurrences, upcoming, forMonth, monthlyEquivalent, upcomingItemHTML, render, actions, init };
 })();
