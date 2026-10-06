@@ -108,6 +108,7 @@ Formulario → módulo (Transactions, Budget…) → Store.set() → LocalStorag
 ```
 
 - **`Store` (storage.js)** es el único módulo que habla con LocalStorage. Guarda una copia en memoria, limpia y valida los datos al cargarlos o importarlos y avisa a sus suscriptores cada vez que algo cambia.
+- **Sincronización entre pestañas**: `Store` escucha el evento `storage` de `window`, que el navegador lanza en las demás pestañas cuando una modifica LocalStorage. Al recibirlo, vuelve a leer la clave, la pasa por su sanitizer, actualiza la caché y avisa a los suscriptores, así que la otra pestaña se repinta sola. El tema también se sincroniza. Si dos pestañas modifican la misma colección a la vez, gana el último cambio.
 - **`App` (app.js)** se suscribe a esos cambios y vuelve a pintar la vista activa. Por eso el dashboard, las gráficas y los presupuestos siempre muestran datos actualizados sin tener que llamarlos a mano.
 - **`Stats` (statistics.js)** solo calcula: recibe datos y devuelve números. Las vistas y las gráficas usan esos resultados.
 - **Acciones con `data-action`**: los botones generados dinámicamente llevan `data-action="edit-tx" data-id="…"`. Un único listener en `document` (app.js) busca la acción en un mapa que reúne las acciones de todos los módulos. Así no hay que añadir listeners a cada botón después de pintar.
@@ -118,18 +119,36 @@ Cada sección es un `<section class="view">` dentro de `index.html`. La URL usa 
 ### Dinero sin errores de decimales
 Todas las cantidades se guardan como **céntimos enteros** (`12,50 €` → `1250`). Así se evitan errores como `0.1 + 0.2 = 0.30000000000000004`. `Utils.toCents()` convierte texto a céntimos usando solo enteros y `Utils.formatMoney()` muestra el formato español `1.250,50 €`. No se usa `Intl.NumberFormat` porque, en `es-ES`, no separa los miles en números de 4 cifras.
 
+Los campos de cantidad son `type="text" inputmode="decimal"`, no `type="number"`. Así funcionan aunque el navegador no esté en español (con `type="number"`, "12,50" llegaba vacío) y en el móvil siguen mostrando el teclado numérico. `toCents()` interpreta el texto así:
+
+| Entrada | Resultado | Regla |
+|---|---|---|
+| `12,50` · `12.50` · `12,5` | 12,50 € | Con un solo separador, la coma o el punto son decimales… |
+| `2.000` · `1.250.000` | 2.000 € · 1.250.000 € | …salvo un punto seguido de exactamente 3 cifras, que son miles (como en español) |
+| `1.250,50` · `1,250.50` | 1.250,50 € | Con los dos separadores, el último es el decimal |
+| `0,005` · `12,345` | 0,01 € · 12,35 € | Se redondea al céntimo (mitad hacia arriba) |
+| `1.2.3` · `12.50,30` · `abc` | Error | Los miles deben ir en grupos de 3 cifras |
+
+Al editar, `Utils.centsToInput()` rellena el campo con coma decimal (`1250,50`).
+
+### Seguridad
+- Todo texto del usuario se inserta en el HTML con `Utils.escapeHTML()`, también los ids de los atributos `data-id` y `value`.
+- Al cargar o importar datos, los sanitizers de `storage.js` solo aceptan ids que cumplan `/^[\w-]{1,64}$/` (letras, números, `_` y `-`) y eliminan los elementos con id duplicado. Así un `.json` manipulado no puede inyectar HTML ni scripts.
+
 ### Datos en LocalStorage
 Cada colección se guarda en su propia clave:
 
 | Clave | Contenido |
 |---|---|
-| `gestorGastos.transactions` | `[{ id, type, concept, amount, categoryId, date, method, notes, createdAt }]` |
+| `gestorGastos.transactions` | `[{ id, type, concept, amount, categoryId, date, method, notes, createdAt, recurringId? }]` |
 | `gestorGastos.categories` | `[{ id, name, icon, type, color, custom }]` |
 | `gestorGastos.budgets` | `{ monthly, byCategory: { [categoryId]: céntimos } }` |
 | `gestorGastos.recurring` | `[{ id, name, amount, categoryId, day, frequency, startMonth, method, active }]` |
 | `gestorGastos.goals` | `[{ id, name, icon, target, saved, deadline, createdAt }]` |
 | `gestorGastos.settings` | `{ userName, demoLoaded, demoBannerHidden, schemaVersion }` |
 | `gestorGastos.theme` | `"light"` o `"dark"` |
+
+`recurringId` es opcional: lo añade "Registrar pago" para enlazar el movimiento con el gasto recurrente del que viene.
 
 Los registros de ejemplo llevan `demo: true`. Así se pueden borrar sin tocar los datos que haya añadido el usuario. Si el usuario edita un registro de ejemplo, pierde esa marca y pasa a ser suyo.
 
@@ -188,6 +207,8 @@ Los registros de ejemplo llevan `demo: true`. Así se pueden borrar sin tocar lo
 - Diseño responsive: sidebar en escritorio, menú desplegable en tablet y móvil, modales tipo *bottom sheet* en móvil y botón flotante para añadir.
 - Modo claro y oscuro, que también se aplica a las gráficas.
 - Toasts, confirmaciones, estados vacíos, estado de carga y validaciones con mensajes bajo cada campo.
+- Las cantidades aceptan coma o punto decimal y separadores de miles, en cualquier idioma del navegador.
+- Si la app está abierta en varias pestañas, los cambios de una se ven al momento en las demás.
 - Buscador global (movimientos, objetivos, recurrentes y secciones) que se puede usar con las flechas del teclado.
 - Selector de mes en la barra superior.
 - Atajos de teclado: `N` gasto, `I` ingreso, `/` o `Ctrl+K` buscar, `1`–`7` secciones, `←` `→` cambiar de mes, `T` tema, `?` ayuda.
@@ -203,5 +224,6 @@ Los registros de ejemplo llevan `demo: true`. Así se pueden borrar sin tocar lo
 - Importar movimientos desde un CSV, por ejemplo el extracto del banco.
 - Gráficas comparativas entre años e informe en PDF.
 - Deshacer también al borrar objetivos, recurrentes y límites.
-- Tests automáticos de los cálculos de `statistics.js` y `utils.js`.
+- Tests de las vistas (renderizado y formularios), que ahora se prueban a mano.
+- Avisar si dos pestañas editan la misma colección a la vez, en lugar de quedarse con el último cambio.
 - Sincronizar entre dispositivos con un backend opcional.
