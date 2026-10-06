@@ -58,7 +58,7 @@ const Transactions = (() => {
     if (!tx) return;
     const ok = await UI.confirm({
       title: `Eliminar ${TYPES[tx.type].toLowerCase()}`,
-      message: `Se eliminará "${tx.concept}" (${formatMoney(tx.amount)}). Esta acción no se puede deshacer.`,
+      message: `Se eliminará "${tx.concept}" (${formatMoney(tx.amount)}). Podrás deshacerlo durante unos segundos desde el aviso.`,
     });
     if (!ok) return;
     Store.set('transactions', all().filter((t) => t.id !== id));
