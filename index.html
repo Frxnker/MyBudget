@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Gestor de gastos personales: controla ingresos, gastos, presupuestos y objetivos de ahorro.">
+  <meta name="theme-color" content="#5b5bd6">
+  <title>MyBudget · Gestor de gastos</title>
+  <link rel="icon" type="image/svg+xml" href="assets/icons/logo.svg">
+
+  <!-- Aplicamos el tema guardado antes de pintar para evitar el "parpadeo" -->
+  <script>
+    (function () {
+      try {
+        var saved = JSON.parse(localStorage.getItem('gestorGastos.theme'));
+        var theme = saved || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+        document.documentElement.setAttribute('data-theme', theme);
+      } catch (e) {
+        document.documentElement.setAttribute('data-theme', 'light');
+      }
+    })();
+  </script>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="css/responsive.css">
+</head>
+<body>
+  <!-- Pantalla de carga inicial -->
+  <div class="app-loader" id="app-loader" aria-live="polite">
+    <div class="spinner" aria-hidden="true"></div>
+    <span>Cargando tus finanzas…</span>
+  </div>
+
+  <div class="app" id="app">
+    <!-- ============ SIDEBAR ============ -->
+    <aside class="sidebar" id="sidebar" aria-label="Menú principal">
+      <div class="sidebar-brand">
+        <img src="assets/icons/logo.svg" alt="" width="36" height="36">
+        <div>
+          <strong>MyBudget</strong>
+          <small>Finanzas personales</small>
+        </div>
+        <button class="btn-icon sidebar-close" id="sidebar-close" aria-label="Cerrar menú" data-icon="x"></button>
+      </div>
+
+      <nav class="nav" id="nav">
+        <a href="#/dashboard" class="nav-link" data-view="dashboard"><span data-icon="home"></span>Dashboard<kbd>1</kbd></a>
+        <a href="#/movimientos" class="nav-link" data-view="movimientos"><span data-icon="wallet"></span>Movimientos<kbd>2</kbd></a>
+        <a href="#/estadisticas" class="nav-link" data-view="estadisticas"><span data-icon="chart"></span>Estadísticas<kbd>3</kbd></a>
+        <a href="#/presupuestos" class="nav-link" data-view="presupuestos"><span data-icon="pie"></span>Presupuestos<kbd>4</kbd></a>
+        <a href="#/objetivos" class="nav-link" data-view="objetivos"><span data-icon="target"></span>Objetivos<kbd>5</kbd></a>
+        <a href="#/recurrentes" class="nav-link" data-view="recurrentes"><span data-icon="repeat"></span>Recurrentes<kbd>6</kbd></a>
+        <a href="#/configuracion" class="nav-link" data-view="configuracion"><span data-icon="settings"></span>Configuración<kbd>7</kbd></a>
+      </nav>
+
+      <div class="sidebar-footer">
+        <button class="sidebar-action" id="theme-toggle" type="button">
+          <span class="theme-icon" data-icon="moon"></span>
+          <span class="theme-label">Modo oscuro</span>
+          <kbd>T</kbd>
+        </button>
+        <button class="sidebar-action" id="shortcuts-btn" type="button">
+          <span data-icon="keyboard"></span>
+          <span>Atajos de teclado</span>
+          <kbd>?</kbd>
+        </button>
+      </div>
+    </aside>
+    <div class="sidebar-overlay" id="sidebar-overlay"></div>
+
+    <!-- ============ CONTENIDO ============ -->
+    <div class="main">
+      <header class="topbar">
+        <button class="btn-icon menu-toggle" id="menu-toggle" aria-label="Abrir menú" aria-controls="sidebar" aria-expanded="false" data-icon="menu"></button>
+
+        <div class="topbar-title">
+          <h1 id="view-title">Dashboard</h1>
+          <p id="view-subtitle" class="muted"></p>
+        </div>
+
+        <div class="global-search" id="global-search">
+          <span class="search-icon" data-icon="search" data-size="18"></span>
+          <input type="search" id="global-search-input" placeholder="Buscar movimientos, objetivos…" autocomplete="off" aria-label="Buscador global">
+          <kbd class="search-kbd">/</kbd>
+          <div class="search-results" id="global-search-results" role="listbox" hidden></div>
+        </div>
+
+        <div class="month-picker" id="month-picker" aria-label="Selector de mes">
+          <button class="btn-icon" id="month-prev" aria-label="Mes anterior" data-icon="chevronLeft"></button>
+          <button class="month-label" id="month-label" title="Volver al mes actual"></button>
+          <button class="btn-icon" id="month-next" aria-label="Mes siguiente" data-icon="chevronRight"></button>
+        </div>
+
+        <button class="btn btn-primary topbar-add" id="topbar-add" type="button">
+          <span data-icon="plus" data-size="18"></span><span class="btn-text">Añadir</span>
+        </button>
+      </header>
+
+      <main class="content" id="content">
+        <section class="view" id="view-dashboard" data-title="Dashboard" aria-labelledby="view-title"></section>
+        <section class="view" id="view-movimientos" data-title="Movimientos"></section>
+        <section class="view" id="view-estadisticas" data-title="Estadísticas"></section>
+        <section class="view" id="view-presupuestos" data-title="Presupuestos"></section>
+        <section class="view" id="view-objetivos" data-title="Objetivos"></section>
+        <section class="view" id="view-recurrentes" data-title="Recurrentes"></section>
+        <section class="view" id="view-configuracion" data-title="Configuración"></section>
+      </main>
+    </div>
+  </div>
+
+  <!-- Botón flotante (móvil) -->
+  <button class="fab" id="fab" aria-label="Añadir movimiento" data-icon="plus"></button>
+
+  <!-- ============ MODAL: MOVIMIENTO ============ -->
+  <dialog class="modal" id="tx-modal" aria-labelledby="tx-modal-title">
+    <form id="tx-form" novalidate>
+      <header class="modal-header">
+        <h2 id="tx-modal-title">Nuevo movimiento</h2>
+        <button type="button" class="btn-icon" data-close aria-label="Cerrar" data-icon="x"></button>
+      </header>
+      <div class="modal-body">
+        <div class="segmented" role="radiogroup" aria-label="Tipo de movimiento">
+          <label class="segmented-option expense">
+            <input type="radio" name="type" value="expense" checked>
+            <span><i data-icon="arrowDownRight" data-size="16"></i>Gasto</span>
+          </label>
+          <label class="segmented-option income">
+            <input type="radio" name="type" value="income">
+            <span><i data-icon="arrowUpRight" data-size="16"></i>Ingreso</span>
+          </label>
+        </div>
+
+        <div class="form-grid">
+          <div class="field span-2">
+            <label for="tx-concept">Concepto *</label>
+            <input type="text" id="tx-concept" name="concept" maxlength="80" placeholder="Ej. Compra en el supermercado">
+          </div>
+          <div class="field">
+            <label for="tx-amount">Cantidad (€) *</label>
+            <input type="number" id="tx-amount" name="amount" step="0.01" min="0.01" inputmode="decimal" placeholder="0,00">
+          </div>
+          <div class="field">
+            <label for="tx-date">Fecha *</label>
+            <input type="date" id="tx-date" name="date">
+          </div>
+          <div class="field">
+            <label for="tx-category">Categoría *</label>
+            <select id="tx-category" name="categoryId"></select>
+          </div>
+          <div class="field">
+            <label for="tx-method" id="tx-method-label">Método de pago *</label>
+            <select id="tx-method" name="method"></select>
+          </div>
+          <div class="field span-2">
+            <label for="tx-notes">Notas <span class="muted">(opcional)</span></label>
+            <textarea id="tx-notes" name="notes" rows="2" maxlength="300" placeholder="Información adicional…"></textarea>
+          </div>
+        </div>
+      </div>
+      <footer class="modal-footer">
+        <button type="button" class="btn btn-ghost" data-close>Cancelar</button>
+        <button type="submit" class="btn btn-primary" id="tx-submit">Guardar</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <!-- ============ MODAL: CATEGORÍA ============ -->
+  <dialog class="modal modal-sm" id="category-modal" aria-labelledby="category-modal-title">
+    <form id="category-form" novalidate>
+      <header class="modal-header">
+        <h2 id="category-modal-title">Nueva categoría</h2>
+        <button type="button" class="btn-icon" data-close aria-label="Cerrar" data-icon="x"></button>
+      </header>
+      <div class="modal-body">
+        <div class="form-grid">
+          <div class="field span-2">
+            <label for="cat-name">Nombre *</label>
+            <input type="text" id="cat-name" name="name" maxlength="30" placeholder="Ej. Mascotas">
+          </div>
+          <div class="field">
+            <label for="cat-type">Tipo *</label>
+            <select id="cat-type" name="type">
+              <option value="expense">Gasto</option>
+              <option value="income">Ingreso</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="cat-color">Color</label>
+            <input type="color" id="cat-color" name="color" value="#5b5bd6">
+          </div>
+          <div class="field span-2">
+            <label for="cat-icon">Icono *</label>
+            <input type="text" id="cat-icon" name="icon" maxlength="4" placeholder="🐶">
+            <div class="emoji-picker" id="emoji-picker" aria-label="Iconos sugeridos"></div>
+          </div>
+        </div>
+      </div>
+      <footer class="modal-footer">
+        <button type="button" class="btn btn-ghost" data-close>Cancelar</button>
+        <button type="submit" class="btn btn-primary">Guardar categoría</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <!-- ============ MODAL: PRESUPUESTO POR CATEGORÍA ============ -->
+  <dialog class="modal modal-sm" id="budget-modal" aria-labelledby="budget-modal-title">
+    <form id="budget-form" novalidate>
+      <header class="modal-header">
+        <h2 id="budget-modal-title">Límite por categoría</h2>
+        <button type="button" class="btn-icon" data-close aria-label="Cerrar" data-icon="x"></button>
+      </header>
+      <div class="modal-body">
+        <div class="form-grid">
+          <div class="field span-2">
+            <label for="budget-category">Categoría *</label>
+            <select id="budget-category" name="categoryId"></select>
+          </div>
+          <div class="field span-2">
+            <label for="budget-amount">Límite mensual (€) *</label>
+            <input type="number" id="budget-amount" name="amount" step="0.01" min="0.01" inputmode="decimal" placeholder="0,00">
+          </div>
+        </div>
+      </div>
+      <footer class="modal-footer">
+        <button type="button" class="btn btn-ghost" data-close>Cancelar</button>
+        <button type="submit" class="btn btn-primary">Guardar límite</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <!-- ============ MODAL: GASTO RECURRENTE ============ -->
+  <dialog class="modal" id="recurring-modal" aria-labelledby="recurring-modal-title">
+    <form id="recurring-form" novalidate>
+      <header class="modal-header">
+        <h2 id="recurring-modal-title">Nuevo gasto recurrente</h2>
+        <button type="button" class="btn-icon" data-close aria-label="Cerrar" data-icon="x"></button>
+      </header>
+      <div class="modal-body">
+        <div class="form-grid">
+          <div class="field span-2">
+            <label for="rec-name">Nombre *</label>
+            <input type="text" id="rec-name" name="name" maxlength="60" placeholder="Ej. Netflix">
+          </div>
+          <div class="field">
+            <label for="rec-amount">Cantidad (€) *</label>
+            <input type="number" id="rec-amount" name="amount" step="0.01" min="0.01" inputmode="decimal" placeholder="0,00">
+          </div>
+          <div class="field">
+            <label for="rec-category">Categoría *</label>
+            <select id="rec-category" name="categoryId"></select>
+          </div>
+          <div class="field">
+            <label for="rec-day">Día del mes *</label>
+            <input type="number" id="rec-day" name="day" min="1" max="31" step="1" placeholder="1-31">
+          </div>
+          <div class="field">
+            <label for="rec-frequency">Frecuencia *</label>
+            <select id="rec-frequency" name="frequency"></select>
+          </div>
+          <div class="field">
+            <label for="rec-start">Primer cobro (mes) *</label>
+            <input type="month" id="rec-start" name="startMonth" placeholder="AAAA-MM">
+          </div>
+          <div class="field">
+            <label for="rec-method">Método de pago *</label>
+            <select id="rec-method" name="method"></select>
+          </div>
+        </div>
+        <p class="hint">Si el día no existe en un mes (p. ej. 31 en febrero) se usará el último día del mes.</p>
+      </div>
+      <footer class="modal-footer">
+        <button type="button" class="btn btn-ghost" data-close>Cancelar</button>
+        <button type="submit" class="btn btn-primary">Guardar</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <!-- ============ MODAL: OBJETIVO ============ -->
+  <dialog class="modal" id="goal-modal" aria-labelledby="goal-modal-title">
+    <form id="goal-form" novalidate>
+      <header class="modal-header">
+        <h2 id="goal-modal-title">Nuevo objetivo</h2>
+        <button type="button" class="btn-icon" data-close aria-label="Cerrar" data-icon="x"></button>
+      </header>
+      <div class="modal-body">
+        <div class="form-grid">
+          <div class="field span-2">
+            <label for="goal-name">Nombre *</label>
+            <input type="text" id="goal-name" name="name" maxlength="60" placeholder="Ej. Viaje a Japón">
+          </div>
+          <div class="field">
+            <label for="goal-target">Objetivo (€) *</label>
+            <input type="number" id="goal-target" name="target" step="0.01" min="0.01" inputmode="decimal" placeholder="0,00">
+          </div>
+          <div class="field">
+            <label for="goal-saved">Ahorrado (€)</label>
+            <input type="number" id="goal-saved" name="saved" step="0.01" min="0" inputmode="decimal" placeholder="0,00">
+          </div>
+          <div class="field">
+            <label for="goal-deadline">Fecha límite <span class="muted">(opcional)</span></label>
+            <input type="date" id="goal-deadline" name="deadline">
+          </div>
+          <div class="field">
+            <label for="goal-icon">Icono</label>
+            <input type="text" id="goal-icon" name="icon" maxlength="4" placeholder="🎯">
+          </div>
+        </div>
+      </div>
+      <footer class="modal-footer">
+        <button type="button" class="btn btn-ghost" data-close>Cancelar</button>
+        <button type="submit" class="btn btn-primary">Guardar objetivo</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <!-- ============ MODAL: APORTACIÓN A OBJETIVO ============ -->
+  <dialog class="modal modal-sm" id="contribution-modal" aria-labelledby="contribution-modal-title">
+    <form id="contribution-form" novalidate>
+      <header class="modal-header">
+        <h2 id="contribution-modal-title">Actualizar ahorro</h2>
+        <button type="button" class="btn-icon" data-close aria-label="Cerrar" data-icon="x"></button>
+      </header>
+      <div class="modal-body">
+        <p class="muted" id="contribution-goal-name"></p>
+        <div class="segmented">
+          <label class="segmented-option income">
+            <input type="radio" name="operation" value="add" checked>
+            <span><i data-icon="plus" data-size="16"></i>Aportar</span>
+          </label>
+          <label class="segmented-option expense">
+            <input type="radio" name="operation" value="withdraw">
+            <span><i data-icon="minus" data-size="16"></i>Retirar</span>
+          </label>
+        </div>
+        <div class="field">
+          <label for="contribution-amount">Cantidad (€) *</label>
+          <input type="number" id="contribution-amount" name="amount" step="0.01" min="0.01" inputmode="decimal" placeholder="0,00">
+        </div>
+      </div>
+      <footer class="modal-footer">
+        <button type="button" class="btn btn-ghost" data-close>Cancelar</button>
+        <button type="submit" class="btn btn-primary">Confirmar</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <!-- ============ MODAL: CONFIRMACIÓN ============ -->
+  <dialog class="modal modal-sm modal-confirm" id="confirm-modal" aria-labelledby="confirm-title">
+    <div class="modal-body confirm-body">
+      <div class="confirm-icon" id="confirm-icon" data-icon="alert" data-size="26"></div>
+      <h2 id="confirm-title">¿Estás seguro?</h2>
+      <p id="confirm-message" class="muted"></p>
+    </div>
+    <footer class="modal-footer">
+      <button type="button" class="btn btn-ghost" id="confirm-cancel">Cancelar</button>
+      <button type="button" class="btn btn-danger" id="confirm-accept">Eliminar</button>
+    </footer>
+  </dialog>
+
+  <!-- ============ MODAL: ATAJOS ============ -->
+  <dialog class="modal modal-sm" id="shortcuts-modal" aria-labelledby="shortcuts-title">
+    <header class="modal-header">
+      <h2 id="shortcuts-title">Atajos de teclado</h2>
+      <button type="button" class="btn-icon" data-close aria-label="Cerrar" data-icon="x"></button>
+    </header>
+    <div class="modal-body">
+      <ul class="shortcut-list">
+        <li><span>Nuevo gasto</span><kbd>N</kbd></li>
+        <li><span>Nuevo ingreso</span><kbd>I</kbd></li>
+        <li><span>Buscar</span><span><kbd>/</kbd> o <kbd>Ctrl</kbd>+<kbd>K</kbd></span></li>
+        <li><span>Ir a una sección</span><span><kbd>1</kbd> … <kbd>7</kbd></span></li>
+        <li><span>Mes anterior / siguiente</span><span><kbd>←</kbd> <kbd>→</kbd></span></li>
+        <li><span>Cambiar tema</span><kbd>T</kbd></li>
+        <li><span>Mostrar esta ayuda</span><kbd>?</kbd></li>
+        <li><span>Cerrar ventana</span><kbd>Esc</kbd></li>
+      </ul>
+    </div>
+  </dialog>
+
+  <!-- Contenedor de notificaciones -->
+  <div class="toast-container" id="toast-container" aria-live="polite" aria-atomic="false"></div>
+
+  <!-- Librería de gráficas (si no hay conexión, la app funciona sin gráficas) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+
+  <!-- Scripts de la aplicación (el orden importa) -->
+  <script src="js/utils.js"></script>
+  <script src="js/icons.js"></script>
+  <script src="js/storage.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/categories.js"></script>
+  <script src="js/transactions.js"></script>
+  <script src="js/budget.js"></script>
+  <script src="js/recurring.js"></script>
+  <script src="js/goals.js"></script>
+  <script src="js/statistics.js"></script>
+  <script src="js/charts.js"></script>
+  <script src="js/statistics-view.js"></script>
+  <script src="js/dashboard.js"></script>
+  <script src="js/settings.js"></script>
+  <script src="js/demo.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

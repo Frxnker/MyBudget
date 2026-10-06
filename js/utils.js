@@ -1,0 +1,251 @@
+/**
+ * utils.js
+ * Funciones auxiliares reutilizables: dinero, fechas, DOM y utilidades varias.
+ *
+ * IMPORTANTE: todas las cantidades se guardan como CÉNTIMOS (números enteros).
+ * Así evitamos errores típicos de coma flotante como 0.1 + 0.2 = 0.30000000000000004.
+ */
+const Utils = (() => {
+  /* ---------------------------------------------------------------
+   * DINERO
+   * ------------------------------------------------------------- */
+
+  /**
+   * Convierte un texto o número a céntimos (entero).
+   * Acepta "1.250,50", "1250,50", "1250.50" o 1250.5. Devuelve NaN si no es válido.
+   */
+  function toCents(value) {
+    if (typeof value === 'number') {
+      return Number.isFinite(value) ? Math.round(value * 100) : NaN;
+    }
+    let str = String(value ?? '').trim().replace(/[\s€ ]/g, '');
+    if (!str) return NaN;
+
+    const lastComma = str.lastIndexOf(',');
+    const lastDot = str.lastIndexOf('.');
+    if (lastComma > -1 && lastDot > -1) {
+      // El último separador es el decimal; el otro es de miles
+      str = lastComma > lastDot
+        ? str.replace(/\./g, '').replace(',', '.')
+        : str.replace(/,/g, '');
+    } else if (lastComma > -1) {
+      str = str.replace(',', '.');
+    } else if ((str.match(/\./g) || []).length > 1) {
+      str = str.replace(/\./g, ''); // "1.250.000" → miles
+    }
+
+    const match = str.match(/^(-)?(\d*)(?:\.(\d*))?$/);
+    if (!match || (!match[2] && !match[3])) return NaN;
+
+    // Cálculo con enteros para no perder precisión
+    const integer = parseInt(match[2] || '0', 10);
+    const decimals = (match[3] || '').padEnd(3, '0');
+    let cents = integer * 100 + parseInt(decimals.slice(0, 2), 10);
+    if (parseInt(decimals[2], 10) >= 5) cents += 1;
+    return match[1] ? -cents : cents;
+  }
+
+  /** Céntimos → valor para un <input type="number"> ("1250.50") */
+  function centsToInput(cents) {
+    return (cents / 100).toFixed(2);
+  }
+
+  /** Céntimos → euros (número), útil para las gráficas */
+  function centsToEuros(cents) {
+    return Math.round(cents) / 100;
+  }
+
+  /**
+   * Formatea céntimos con formato español: 125050 → "1.250,50 €".
+   * No usamos Intl porque en es-ES no agrupa los números de 4 cifras (1250,50 €).
+   */
+  function formatMoney(cents, { sign = false, decimals = true } = {}) {
+    const value = Math.round(Number(cents) || 0);
+    const abs = Math.abs(value);
+    let euros = Math.floor(abs / 100);
+    let dec = String(abs % 100).padStart(2, '0');
+    if (!decimals) {
+      euros = Math.round(abs / 100);
+    }
+    const intStr = String(euros).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+    const prefix = value < 0 ? '-' : (sign && value > 0 ? '+' : '');
+    return `${prefix}${intStr}${decimals ? ',' + dec : ''} €`;
+  }
+
+  /** Formatea un porcentaje: 42.5 → "42,5 %" */
+  function formatPercent(value, digits = 1) {
+    if (!Number.isFinite(value)) return '—';
+    return `${value.toFixed(digits).replace('.', ',')} %`;
+  }
+
+  /** Porcentaje seguro (evita dividir entre 0) */
+  function percent(part, total) {
+    return total > 0 ? (part / total) * 100 : 0;
+  }
+
+  /* ---------------------------------------------------------------
+   * FECHAS (formato ISO "AAAA-MM-DD" en hora local)
+   * ------------------------------------------------------------- */
+
+  const pad = (n) => String(n).padStart(2, '0');
+
+  function toISODate(date) {
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+  }
+
+  function todayISO() {
+    return toISODate(new Date());
+  }
+
+  /** "2026-10-06" → Date local (sin desfase de zona horaria) */
+  function parseISODate(iso) {
+    const [y, m, d] = iso.split('-').map(Number);
+    return new Date(y, m - 1, d);
+  }
+
+  function isValidISODate(iso) {
+    if (typeof iso !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(iso)) return false;
+    const date = parseISODate(iso);
+    return toISODate(date) === iso && date.getFullYear() >= 1900 && date.getFullYear() <= 2100;
+  }
+
+  function isValidMonthKey(key) {
+    return typeof key === 'string' && /^\d{4}-(0[1-9]|1[0-2])$/.test(key);
+  }
+
+  const dateFormatter = new Intl.DateTimeFormat('es-ES', { day: '2-digit', month: 'short', year: 'numeric' });
+  const dateLongFormatter = new Intl.DateTimeFormat('es-ES', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+  const dayMonthFormatter = new Intl.DateTimeFormat('es-ES', { day: 'numeric', month: 'short' });
+
+  /** "2026-10-06" → "06 oct 2026" */
+  function formatDate(iso, style = 'short') {
+    if (!isValidISODate(iso)) return '—';
+    const date = parseISODate(iso);
+    if (style === 'long') return capitalize(dateLongFormatter.format(date));
+    if (style === 'dayMonth') return dayMonthFormatter.format(date);
+    return dateFormatter.format(date).replace('.', '');
+  }
+
+  /** "2026-10-06" → "2026-10" */
+  function monthKey(iso) {
+    return iso.slice(0, 7);
+  }
+
+  function currentMonthKey() {
+    return monthKey(todayISO());
+  }
+
+  /** Suma (o resta) meses a una clave "AAAA-MM" */
+  function addMonths(key, amount) {
+    const [y, m] = key.split('-').map(Number);
+    const date = new Date(y, m - 1 + amount, 1);
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}`;
+  }
+
+  /** Número de meses entre dos claves (b - a) */
+  function monthDiff(a, b) {
+    const [ya, ma] = a.split('-').map(Number);
+    const [yb, mb] = b.split('-').map(Number);
+    return (yb - ya) * 12 + (mb - ma);
+  }
+
+  function daysInMonth(key) {
+    const [y, m] = key.split('-').map(Number);
+    return new Date(y, m, 0).getDate();
+  }
+
+  const MONTHS = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio',
+    'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+
+  /** "2026-10" → "Octubre 2026" (o "Oct" en formato corto) */
+  function monthLabel(key, short = false) {
+    const [y, m] = key.split('-').map(Number);
+    const name = MONTHS[m - 1];
+    return short ? capitalize(name.slice(0, 3)) : `${capitalize(name)} ${y}`;
+  }
+
+  /** Días entre hoy y una fecha ISO (negativo si ya pasó) */
+  function daysUntil(iso) {
+    const ms = parseISODate(iso) - parseISODate(todayISO());
+    return Math.round(ms / 86400000);
+  }
+
+  /** Texto relativo: "Hoy", "Mañana", "En 5 días" */
+  function relativeDays(iso) {
+    const days = daysUntil(iso);
+    if (days === 0) return 'Hoy';
+    if (days === 1) return 'Mañana';
+    if (days === -1) return 'Ayer';
+    return days > 0 ? `En ${days} días` : `Hace ${-days} días`;
+  }
+
+  /* ---------------------------------------------------------------
+   * DOM
+   * ------------------------------------------------------------- */
+
+  const $ = (selector, root = document) => root.querySelector(selector);
+  const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
+
+  /** Escapa texto del usuario antes de insertarlo como HTML (evita XSS) */
+  function escapeHTML(value) {
+    return String(value ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  /* ---------------------------------------------------------------
+   * VARIOS
+   * ------------------------------------------------------------- */
+
+  function uid(prefix = 'id') {
+    return `${prefix}_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+  }
+
+  function capitalize(text) {
+    return text ? text.charAt(0).toUpperCase() + text.slice(1) : '';
+  }
+
+  /** Normaliza texto para búsquedas: minúsculas y sin tildes */
+  function normalize(text) {
+    return String(text ?? '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  }
+
+  function debounce(fn, wait = 250) {
+    let timer;
+    return (...args) => {
+      clearTimeout(timer);
+      timer = setTimeout(() => fn(...args), wait);
+    };
+  }
+
+  function sumBy(list, getter) {
+    return list.reduce((total, item) => total + getter(item), 0);
+  }
+
+  function clamp(value, min, max) {
+    return Math.min(Math.max(value, min), max);
+  }
+
+  /** Descarga un archivo generado en el navegador */
+  function downloadFile(filename, content, mime = 'application/json') {
+    const blob = new Blob([content], { type: mime });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  return {
+    toCents, centsToInput, centsToEuros, formatMoney, formatPercent, percent,
+    toISODate, todayISO, parseISODate, isValidISODate, isValidMonthKey, formatDate,
+    monthKey, currentMonthKey, addMonths, monthDiff, daysInMonth, monthLabel, daysUntil, relativeDays,
+    $, $$, escapeHTML, uid, capitalize, normalize, debounce, sumBy, clamp, downloadFile,
+  };
+})();
