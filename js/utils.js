@@ -12,7 +12,9 @@ const Utils = (() => {
 
   /**
    * Convierte un texto o número a céntimos (entero).
-   * Acepta "1.250,50", "1250,50", "1250.50" o 1250.5. Devuelve NaN si no es válido.
+   * Acepta "1.250,50", "1250,50", "1250.50", "1,250.50" o 1250.5. Devuelve NaN si no es válido.
+   * Un punto seguido de exactamente 3 cifras ("2.000") se interpreta como separador de miles,
+   * como se escribe en español.
    */
   function toCents(value) {
     if (typeof value === 'number') {
@@ -30,8 +32,8 @@ const Utils = (() => {
         : str.replace(/,/g, '');
     } else if (lastComma > -1) {
       str = str.replace(',', '.');
-    } else if ((str.match(/\./g) || []).length > 1) {
-      str = str.replace(/\./g, ''); // "1.250.000" → miles
+    } else if ((str.match(/\./g) || []).length > 1 || /^-?\d{1,3}\.\d{3}$/.test(str)) {
+      str = str.replace(/\./g, ''); // "1.250.000" o "2.000" → miles
     }
 
     const match = str.match(/^(-)?(\d*)(?:\.(\d*))?$/);
@@ -45,9 +47,9 @@ const Utils = (() => {
     return match[1] ? -cents : cents;
   }
 
-  /** Céntimos → valor para un <input type="number"> ("1250.50") */
+  /** Céntimos → texto para rellenar un campo de cantidad ("1250,50"). toCents() lo vuelve a leer. */
   function centsToInput(cents) {
-    return (cents / 100).toFixed(2);
+    return (cents / 100).toFixed(2).replace('.', ',');
   }
 
   /** Céntimos → euros (número), útil para las gráficas */

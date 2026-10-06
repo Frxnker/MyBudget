@@ -180,7 +180,7 @@ const Budget = (() => {
           <div class="field">
             <label for="monthly-budget-input">${s.limit ? 'Cambiar presupuesto (€)' : 'Presupuesto mensual (€)'}</label>
             <div class="input-group">
-              <input type="number" id="monthly-budget-input" name="monthly" step="0.01" min="0.01" inputmode="decimal"
+              <input type="text" id="monthly-budget-input" name="monthly" inputmode="decimal" autocomplete="off"
                 placeholder="Ej. 1000" value="${s.limit ? Utils.centsToInput(s.limit) : ''}">
               <button class="btn btn-primary" type="submit">Guardar</button>
             </div>

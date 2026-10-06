@@ -216,8 +216,6 @@ const Transactions = (() => {
 
     const amount = UI.validateAmount(form.elements.amount.value);
     if (amount.error) errors.amount = amount.error;
-    // El navegador deja el valor vacío si el texto del input number no es válido
-    if (form.elements.amount.validity.badInput) errors.amount = 'Introduce una cantidad válida (ej. 12,50).';
 
     if (!values.date) errors.date = 'La fecha es obligatoria.';
     else if (!Utils.isValidISODate(values.date)) errors.date = 'La fecha no es válida.';

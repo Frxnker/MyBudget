@@ -171,7 +171,7 @@ const UI = (() => {
       return required ? { error: `${label} es obligatoria.` } : { cents: 0 };
     }
     const cents = Utils.toCents(raw);
-    if (Number.isNaN(cents)) return { error: `${label} no es un número válido.` };
+    if (Number.isNaN(cents)) return { error: `${label} no es un número válido (ej. 12,50).` };
     if (allowZero ? cents < 0 : cents <= 0) {
       return { error: allowZero ? `${label} no puede ser negativa.` : `${label} debe ser mayor que 0.` };
     }
