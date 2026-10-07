@@ -1,6 +1,7 @@
 /**
  * transactions.js
- * Movimientos (gastos e ingresos): alta, edición, borrado, duplicado, filtros, orden e historial.
+ * Movimientos (gastos e ingresos): alta, edición, borrado, duplicado, recibos, búsqueda, filtros,
+ * orden e historial.
  */
 const Transactions = (() => {
   const { $, escapeHTML, formatMoney, formatDate, normalize } = Utils;
@@ -68,6 +69,25 @@ const Transactions = (() => {
     return byDateDesc.slice(0, limit);
   }
 
+  /** Movimientos entre dos fechas ISO (ambas incluidas). Usa el índice por meses */
+  function between(from, to) {
+    ensureIndex();
+    if (from > to) return [];
+    const result = [];
+    for (let key = from.slice(0, 7); key <= to.slice(0, 7); key = Utils.addMonths(key, 1)) {
+      (byMonth.get(key) || []).forEach((t) => {
+        if (t.date >= from && t.date <= to) result.push(t);
+      });
+    }
+    return result;
+  }
+
+  /** Meses ("AAAA-MM") que tienen algún movimiento, del más reciente al más antiguo */
+  function monthKeys() {
+    ensureIndex();
+    return [...byMonth.keys()].sort().reverse();
+  }
+
   function allMethods() {
     const set = new Set([...METHODS.expense, ...METHODS.income]);
     all().forEach((t) => t.method && set.add(t.method));
@@ -100,6 +120,36 @@ const Transactions = (() => {
         Store.set('transactions', [...all(), tx]);
         UI.toast(`"${tx.concept}" restaurado`);
       },
+    });
+    // El recibo se borra cuando ya no se puede deshacer (si se cierra la app antes, lo limpia Receipts.prune)
+    if (tx.receiptId) {
+      setTimeout(() => {
+        if (!get(id)) Receipts.remove(tx.receiptId).catch(() => {});
+      }, 7000);
+    }
+  }
+
+  /** Datos de una copia de un movimiento: los mismos datos con la fecha de hoy (sin recibo ni enlaces) */
+  function duplicateData(t, today = Utils.todayISO()) {
+    return {
+      type: t.type,
+      concept: t.concept,
+      amount: t.amount,
+      categoryId: t.categoryId,
+      method: t.method,
+      notes: t.notes,
+      date: today,
+    };
+  }
+
+  /** Crea al momento una copia con fecha de hoy; el aviso permite editarla */
+  function duplicate(id) {
+    const source = get(id);
+    if (!source) return;
+    const copy = add(duplicateData(source));
+    UI.toast(`"${source.concept}" duplicado con fecha de hoy`, 'success', 6000, {
+      label: 'Editar',
+      onClick: () => openForm({ id: copy.id }),
     });
   }
 
@@ -136,22 +186,69 @@ const Transactions = (() => {
   }
 
   /* ---------------------------------------------------------------
+   * BÚSQUEDA
+   * El texto se divide en palabras y cada una debe aparecer en el movimiento (concepto, notas,
+   * categoría, método o tipo) o coincidir con su importe:
+   *   "50"     → movimientos de 50,00 € a 50,99 €
+   *   "12,50"  → solo los de 12,50 €
+   *   "gasto"  → todos los gastos ("ingreso", los ingresos)
+   *   "amazon 30" → movimientos de Amazon de 30 €
+   * Las mayúsculas y las tildes dan igual.
+   * ------------------------------------------------------------- */
+
+  // Texto de búsqueda de cada movimiento, calculado una sola vez (se rehace si cambian las categorías)
+  let searchCache = new WeakMap();
+  let searchCategories = null;
+
+  function searchText(t) {
+    const categories = Categories.all();
+    if (categories !== searchCategories) {
+      searchCache = new WeakMap();
+      searchCategories = categories;
+    }
+    let text = searchCache.get(t);
+    if (text === undefined) {
+      const type = t.type === 'income' ? 'ingreso ingresos' : 'gasto gastos';
+      text = normalize(`${t.concept} ${t.notes} ${Categories.get(t.categoryId).name} ${t.method} ${type}`);
+      searchCache.set(t, text);
+    }
+    return text;
+  }
+
+  /** Divide la búsqueda en palabras; las que son una cantidad guardan también su valor en céntimos */
+  function parseQuery(text) {
+    return normalize(text).split(/\s+/).filter(Boolean).map((word) => {
+      const token = { word };
+      if (/^\d[\d.,]*$/.test(word)) {
+        const cents = Utils.toCents(word);
+        if (!Number.isNaN(cents)) {
+          token.cents = cents;
+          token.wholeEuros = !/[.,]\d{1,2}$/.test(word); // sin decimales: vale cualquier céntimo
+        }
+      }
+      return token;
+    });
+  }
+
+  function matchesToken(t, token) {
+    if (searchText(t).includes(token.word)) return true;
+    if (token.cents === undefined) return false;
+    return token.wholeEuros ? Math.floor(t.amount / 100) * 100 === token.cents : t.amount === token.cents;
+  }
+
+  /* ---------------------------------------------------------------
    * FILTROS Y ORDEN
    * ------------------------------------------------------------- */
 
   function applyFilters(list, filters) {
-    const text = normalize(filters.text.trim());
+    const tokens = parseQuery(filters.text || '');
     return list.filter((t) => {
-      if (filters.type !== 'all' && t.type !== filters.type) return false;
+      if (filters.type && filters.type !== 'all' && t.type !== filters.type) return false;
       if (filters.categoryId && t.categoryId !== filters.categoryId) return false;
       if (filters.method && t.method !== filters.method) return false;
       if (filters.from && t.date < filters.from) return false;
       if (filters.to && t.date > filters.to) return false;
-      if (text) {
-        const haystack = normalize(`${t.concept} ${t.notes} ${Categories.get(t.categoryId).name} ${t.method}`);
-        if (!haystack.includes(text)) return false;
-      }
-      return true;
+      return tokens.every((token) => matchesToken(t, token));
     });
   }
 
@@ -177,12 +274,111 @@ const Transactions = (() => {
     if (state.mounted) syncFilterInputs();
   }
 
+  /** Muestra en el historial solo los movimientos de una categoría (desde sus estadísticas) */
+  function showCategory(categoryId) {
+    const category = Categories.get(categoryId);
+    state.filters = { text: '', type: category.type, categoryId, from: '', to: '', method: '' };
+    state.visible = PAGE_SIZE;
+    if (state.mounted) syncFilterInputs();
+  }
+
   /* ---------------------------------------------------------------
    * FORMULARIO (modal)
    * ------------------------------------------------------------- */
 
   let editingId = null;
   let extraData = {}; // datos extra al guardar (p. ej. desde un gasto recurrente)
+  let saving = false;
+
+  /*
+   * Recibo del formulario:
+   *  - current: id del recibo que ya tenía el movimiento
+   *  - pending: imagen nueva ya comprimida, pendiente de guardar al pulsar "Guardar"
+   *  - removed: el usuario ha quitado el recibo que tenía
+   * Nada se guarda hasta enviar el formulario: si se cancela, no queda ninguna imagen huérfana.
+   */
+  const receipt = { current: null, pending: null, removed: false, preview: '' };
+
+  function resetReceipt(currentId = null) {
+    receipt.current = currentId;
+    receipt.pending = null;
+    receipt.removed = false;
+    receipt.preview = '';
+    renderReceiptField();
+    if (!currentId) return;
+    Receipts.get(currentId).then((record) => {
+      // El formulario puede haberse cerrado o cambiado mientras se leía la imagen
+      if (receipt.current !== currentId || receipt.pending || receipt.removed) return;
+      receipt.preview = record ? record.dataUrl : '';
+      renderReceiptField(record ? '' : 'El recibo no está disponible en este navegador.');
+    }).catch(() => renderReceiptField('No se ha podido leer el recibo.'));
+  }
+
+  function renderReceiptField(note = '') {
+    const box = $('#tx-receipt-preview');
+    const add = $('#tx-receipt-add');
+    const hasReceipt = Boolean(receipt.pending || (receipt.current && !receipt.removed));
+    box.hidden = !hasReceipt;
+    add.querySelector('.receipt-add-text').textContent = hasReceipt ? 'Cambiar recibo' : 'Añadir recibo';
+    if (!hasReceipt) return;
+    const src = receipt.pending ? receipt.pending.dataUrl : receipt.preview;
+    const img = $('#tx-receipt-img');
+    img.hidden = !src;
+    if (src) img.src = src;
+    $('#tx-receipt-meta').textContent = note || (receipt.pending
+      ? `Imagen nueva · ${Utils.formatBytes(Receipts.byteSize(receipt.pending.dataUrl))} (se guardará al pulsar "Guardar")`
+      : 'Recibo guardado');
+  }
+
+  async function handleReceiptFile(input) {
+    const file = input.files[0];
+    input.value = ''; // permite volver a elegir la misma imagen
+    if (!file) return;
+    const form = $('#tx-form');
+    const error = Validate.imageFile(file);
+    if (error) {
+      UI.showErrors(form, { receipt: error });
+      return;
+    }
+    const add = $('#tx-receipt-add');
+    add.classList.add('is-loading');
+    add.querySelector('.receipt-add-text').textContent = 'Procesando imagen…';
+    try {
+      receipt.pending = await Receipts.compress(file);
+      UI.clearErrors(form);
+      renderReceiptField();
+    } catch (err) {
+      renderReceiptField();
+      UI.showErrors(form, { receipt: err.message || 'No se ha podido leer la imagen.' });
+    } finally {
+      add.classList.remove('is-loading');
+    }
+  }
+
+  function removeReceiptFromForm() {
+    if (receipt.pending) receipt.pending = null;
+    else receipt.removed = true;
+    renderReceiptField();
+  }
+
+  /**
+   * Guarda la imagen nueva (si la hay) y devuelve el id de recibo que tendrá el movimiento,
+   * null si no tendrá recibo o false si no se ha podido guardar (el error ya se muestra en el formulario).
+   */
+  async function saveReceipt(form) {
+    if (receipt.pending) {
+      const id = Utils.uid('rcp');
+      try {
+        await Receipts.save({ id, ...receipt.pending, createdAt: Date.now() });
+        return id;
+      } catch (error) {
+        console.error(error);
+        UI.showErrors(form, { receipt: 'No se ha podido guardar el recibo: el almacenamiento del navegador está lleno. Quítalo o libera espacio para continuar.' });
+        return false;
+      }
+    }
+    return receipt.removed ? null : receipt.current;
+  }
 
   /**
    * Abre el formulario.
@@ -207,6 +403,8 @@ const Transactions = (() => {
     form.elements.date.value = id ? source.date : Utils.todayISO();
     form.elements.notes.value = source?.notes || '';
     if (prefill?.recurringId) extraData.recurringId = prefill.recurringId;
+    // Al duplicar no se copia el recibo: pertenece a una compra concreta
+    resetReceipt(id ? source.receiptId || null : null);
 
     let title = txType === 'expense' ? 'Nuevo gasto' : 'Nuevo ingreso';
     if (id) title = 'Editar movimiento';
@@ -259,21 +457,37 @@ const Transactions = (() => {
     return { values: { ...values, amount: amount.cents }, errors };
   }
 
-  function handleSubmit(event) {
+  async function handleSubmit(event) {
     event.preventDefault();
+    if (saving) return;
     const form = event.target;
     const { values, errors } = validate(form);
     if (!UI.showErrors(form, errors)) return;
 
-    const label = TYPES[values.type];
-    if (editingId) {
-      update(editingId, values);
-      UI.toast(`${label} actualizado correctamente`);
-    } else {
-      add({ ...values, ...extraData });
-      UI.toast(`${label} añadido correctamente`);
+    // El recibo se guarda antes que el movimiento: si no cabe, el movimiento no se modifica
+    saving = true;
+    $('#tx-submit').disabled = true;
+    try {
+      const receiptId = await saveReceipt(form);
+      if (receiptId === false) return;
+
+      const label = TYPES[values.type];
+      if (editingId) {
+        update(editingId, { ...values, receiptId: receiptId || undefined });
+        UI.toast(`${label} actualizado correctamente`);
+      } else {
+        add({ ...values, ...extraData, ...(receiptId ? { receiptId } : {}) });
+        UI.toast(`${label} añadido correctamente`);
+      }
+      // El recibo anterior ya no se usa si se ha quitado o sustituido
+      if (receipt.current && receipt.current !== receiptId) Receipts.remove(receipt.current).catch(() => {});
+      receipt.current = receiptId;
+      receipt.pending = null;
+      UI.closeModal('tx-modal');
+    } finally {
+      saving = false;
+      $('#tx-submit').disabled = false;
     }
-    UI.closeModal('tx-modal');
   }
 
   function initForm() {
@@ -284,6 +498,12 @@ const Transactions = (() => {
         updateFormForType(event.target.value);
         if (!editingId) $('#tx-modal-title').textContent = event.target.value === 'expense' ? 'Nuevo gasto' : 'Nuevo ingreso';
       }
+      if (event.target.name === 'receipt') handleReceiptFile(event.target);
+    });
+    $('#tx-receipt-remove').addEventListener('click', removeReceiptFromForm);
+    $('#tx-receipt-img').addEventListener('click', () => {
+      const src = $('#tx-receipt-img').src;
+      if (src) Receipts.openViewer({ src, title: form.elements.concept.value.trim() || 'Recibo' });
     });
     UI.liveClearErrors(form);
   }
@@ -307,7 +527,7 @@ const Transactions = (() => {
           <div class="filter-search">
             ${Icons.get('search', 18)}
             <label class="sr-only" for="filter-text">Buscar movimientos</label>
-            <input type="search" id="filter-text" placeholder="Buscar por concepto, notas, categoría o método…">
+            <input type="search" id="filter-text" placeholder="Buscar por concepto, categoría, importe o tipo…" autocomplete="off">
           </div>
           <button class="btn btn-ghost btn-sm filters-toggle" id="filters-toggle" type="button" aria-expanded="false" aria-controls="filters-grid"></button>
           <button class="btn btn-link btn-sm" id="filter-clear" type="button">Limpiar filtros</button>
@@ -462,7 +682,13 @@ const Transactions = (() => {
       aria-label="Ordenar por ${label}">${label}${Icons.get(icon, 14)}</button>`;
   }
 
-  /** Fila de la tabla. Se reutiliza en otras vistas */
+  /** Botón con un clip para ver el recibo de un movimiento (si tiene) */
+  function receiptButton(t) {
+    if (!t.receiptId) return '';
+    return `<button type="button" class="receipt-chip" data-action="view-receipt" data-id="${escapeHTML(t.id)}"
+      title="Ver recibo" aria-label="Ver recibo de ${escapeHTML(t.concept)}">${Icons.get('paperclip', 13)}</button>`;
+  }
+
   /** Fila de la tabla. En móvil (responsive.css) se convierte en una tarjeta de dos líneas */
   function rowHTML(t) {
     const category = Categories.get(t.categoryId);
@@ -478,7 +704,7 @@ const Transactions = (() => {
           <div class="concept-cell">
             ${UI.categoryBadge(category, 'sm')}
             <div>
-              <strong>${concept}</strong>
+              <strong>${concept}${receiptButton(t)}</strong>
               <small class="concept-meta"><span class="cat-dot" style="--cat-color:${category.color}"></span>${escapeHTML(category.name)} · ${shortDate} · ${escapeHTML(t.method || '—')}</small>
               ${t.notes ? `<small class="concept-notes">${escapeHTML(t.notes)}</small>` : ''}
             </div>
@@ -490,7 +716,7 @@ const Transactions = (() => {
         <td data-label="Cantidad" class="td-amount amount-${t.type}">${formatMoney(sign * t.amount, { sign: true })}</td>
         <td data-label="Acciones" class="td-actions">
           <button class="btn-icon btn-icon-sm" data-action="edit-tx" data-id="${id}" title="Editar" aria-label="Editar ${concept}">${Icons.get('edit', 16)}</button>
-          <button class="btn-icon btn-icon-sm" data-action="duplicate-tx" data-id="${id}" title="Duplicar" aria-label="Duplicar ${concept}">${Icons.get('copy', 16)}</button>
+          <button class="btn-icon btn-icon-sm" data-action="duplicate-tx" data-id="${id}" title="Duplicar con fecha de hoy" aria-label="Duplicar ${concept} con fecha de hoy">${Icons.get('copy', 16)}</button>
           <button class="btn-icon btn-icon-sm btn-icon-danger" data-action="delete-tx" data-id="${id}" title="Eliminar" aria-label="Eliminar ${concept}">${Icons.get('trash', 16)}</button>
           <button class="btn-icon btn-icon-sm row-menu" data-action="tx-menu" data-id="${id}" aria-label="Acciones de ${concept}">${Icons.get('more', 18)}</button>
         </td>
@@ -508,7 +734,8 @@ const Transactions = (() => {
       media: UI.categoryBadge(Categories.get(t.categoryId)),
       items: [
         { label: 'Editar', icon: 'edit', action: 'edit-tx', id },
-        { label: 'Duplicar', icon: 'copy', action: 'duplicate-tx', id },
+        { label: 'Duplicar con fecha de hoy', icon: 'copy', action: 'duplicate-tx', id },
+        ...(t.receiptId ? [{ label: 'Ver recibo', icon: 'paperclip', action: 'view-receipt', id }] : []),
         { label: 'Eliminar', icon: 'trash', action: 'delete-tx', id, danger: true },
       ],
     });
@@ -583,8 +810,9 @@ const Transactions = (() => {
     'add-expense': () => openForm({ type: 'expense' }),
     'add-income': () => openForm({ type: 'income' }),
     'edit-tx': (id) => openForm({ id }),
-    'duplicate-tx': (id) => openForm({ duplicateOf: id }),
+    'duplicate-tx': (id) => duplicate(id),
     'delete-tx': (id) => remove(id),
+    'view-receipt': (id) => Receipts.view(id),
     'clear-filters': () => { setSearch(''); renderResults(); },
     'tx-menu': (id) => openRowMenu(id),
     // En móvil, tocar una fila abre su menú de acciones; en escritorio no hace nada (hay botones)
@@ -603,7 +831,8 @@ const Transactions = (() => {
   }
 
   return {
-    TYPES, METHODS, all, get, forMonth, recent, add, update, remove, openForm,
-    setSearch, render, rowHTML, actions, init, applyFilters,
+    TYPES, METHODS, all, get, forMonth, recent, between, monthKeys, add, update, remove, duplicate,
+    duplicateData, openForm, setSearch, showCategory, render, rowHTML, actions, init, applyFilters,
+    parseQuery, exportCSV,
   };
 })();

@@ -54,6 +54,48 @@ const Budget = (() => {
     return { pct, amount: Math.round((limit * pct) / 100) };
   }
 
+  /**
+   * Presupuesto inteligente del mes en curso (ver Finance.budgetPlan): restante, días que quedan,
+   * gasto recomendado por día, ritmo y previsión de fin de mes.
+   * Devuelve null si no hay presupuesto mensual o si "key" no es el mes actual.
+   */
+  function plan(key) {
+    const limit = data().monthly;
+    if (!limit || key !== Utils.currentMonthKey()) return null;
+    const recurring = Recurring.monthBreakdown(key);
+    return Finance.budgetPlan({
+      limit,
+      spent: Stats.monthSummary(key).expense,
+      daysInMonth: Utils.daysInMonth(key),
+      day: new Date().getDate(),
+      fixedSpent: recurring.fixedSpent,
+      pendingFixed: recurring.pendingFixed,
+    });
+  }
+
+  /** Frase de estado del presupuesto inteligente (con icono y texto, no solo color) */
+  function planNote(p) {
+    const projection = `Al ritmo actual terminarás el mes gastando aproximadamente <strong>${formatMoney(p.projected)}</strong>`;
+    if (p.status === 'over') {
+      return UI.statusNote('over', `Has superado el presupuesto en <strong>${formatMoney(-p.remaining)}</strong>. ${projection}.`);
+    }
+    if (p.status === 'fast') {
+      return UI.statusNote('warn', `<strong>Estás gastando más rápido de lo recomendado.</strong> ${projection} (${formatMoney(p.projected - p.limit)} por encima del presupuesto).`);
+    }
+    return UI.statusNote('ok', `<strong>Tu gasto está dentro del presupuesto previsto.</strong> ${projection}.`);
+  }
+
+  /** Cifras del presupuesto inteligente: días restantes, gasto recomendado, media y previsión */
+  function planFiguresHTML(p) {
+    return `
+      <dl class="plan-grid">
+        <div><dt>Días restantes</dt><dd>${p.daysLeft}</dd></div>
+        <div><dt>Gasto recomendado</dt><dd>${formatMoney(p.recommendedDaily)}<small>/día</small></dd></div>
+        <div><dt>Tu media diaria</dt><dd>${formatMoney(p.avgDaily)}<small>/día</small></dd></div>
+        <div><dt>Previsión fin de mes</dt><dd class="${p.projected > p.limit ? 'amount-negative' : ''}">${formatMoney(p.projected)}</dd></div>
+      </dl>`;
+  }
+
   /** Estado de cada límite por categoría en un mes */
   function categoryStatuses(key) {
     return Object.entries(data().byCategory)
@@ -64,23 +106,6 @@ const Budget = (() => {
         return { category: Categories.get(id), categoryId: id, limit, spent, available: limit - spent, pct, level: UI.budgetLevel(pct) };
       })
       .sort((a, b) => b.pct - a.pct);
-  }
-
-  /** Avisos de presupuesto superado o cerca del límite (para el dashboard) */
-  function alerts(key) {
-    const list = [];
-    const monthly = monthlyStatus(key);
-    if (monthly.limit && monthly.level === 'over') {
-      list.push({ level: 'over', message: `Has superado tu presupuesto mensual en ${formatMoney(-monthly.available)}` });
-    } else if (monthly.limit && monthly.level === 'warn') {
-      list.push({ level: 'warn', message: `Has usado el ${formatPercent(monthly.pct, 0)} de tu presupuesto mensual` });
-    }
-    categoryStatuses(key).forEach((s) => {
-      if (s.level === 'over') {
-        list.push({ level: 'over', message: `Has superado tu presupuesto de ${s.category.name.toLowerCase()} (${formatMoney(s.spent)} de ${formatMoney(s.limit)})` });
-      }
-    });
-    return list;
   }
 
   /* ---------------------------------------------------------------
@@ -155,35 +180,44 @@ const Budget = (() => {
   };
 
   /** Etiqueta de estado de un presupuesto (verde, ámbar o rojo, siempre con icono y texto) */
-  function statusPill(level) {
-    return `<span class="status-pill status-${level}">${Icons.get(STATUS[level].icon, 14)}${STATUS[level].label}</span>`;
+  function statusPill(level, label = STATUS[level].label) {
+    return `<span class="status-pill status-${level}">${Icons.get(STATUS[level].icon, 14)}${label}</span>`;
   }
 
   function monthlyCardHTML(key) {
     const s = monthlyStatus(key);
-    const isCurrent = key === Utils.currentMonthKey();
-    const daysLeft = Utils.daysInMonth(key) - Stats.elapsedDaysInMonth(key) + (isCurrent ? 1 : 0);
     const pace = idealPace(key, s.limit);
+    const p = plan(key);
 
     // La marca es informativa: los gastos fijos (alquiler, recibos) suelen concentrarse a principio de mes
     const paceText = pace
       ? `<p class="hint">${Icons.get('clock', 14)}<span>La marca de la barra indica lo que llevarías gastado hoy repartiendo el presupuesto por igual cada día: <strong>${formatMoney(pace.amount)}</strong>.</span></p>`
       : '';
+    const fixedText = p && p.pendingFixed
+      ? `<p class="hint">${Icons.get('repeat', 14)}<span>Quedan <strong>${formatMoney(p.pendingFixed)}</strong> de pagos recurrentes este mes: ya están descontados del gasto recomendado y sumados a la previsión.</span></p>`
+      : '';
+    let monthNote = '';
+    if (!p && key < Utils.currentMonthKey()) {
+      monthNote = s.available >= 0
+        ? UI.statusNote('ok', `Cerraste el mes <strong>${formatMoney(s.available)}</strong> por debajo del presupuesto.`)
+        : UI.statusNote('over', `Cerraste el mes <strong>${formatMoney(-s.available)}</strong> por encima del presupuesto.`);
+    } else if (!p && s.limit) {
+      monthNote = UI.statusNote('info', `Este mes aún no ha empezado: podrás gastar unos <strong>${formatMoney(Math.round(s.limit / Utils.daysInMonth(key)))}</strong> al día.`);
+    }
 
     const body = s.limit
       ? `
         <div class="budget-figures">
           <div><span>Gastado</span><strong>${UI.money(s.spent)}</strong></div>
           <div><span>Presupuesto</span><strong>${UI.money(s.limit)}</strong></div>
-          <div><span>${s.available >= 0 ? 'Disponible' : 'Exceso'}</span>
+          <div><span>${s.available >= 0 ? 'Restante' : 'Exceso'}</span>
             <strong class="${s.available >= 0 ? 'amount-income' : 'amount-negative'}">${UI.money(Math.abs(s.available))}</strong></div>
         </div>
         ${UI.progressBar(s.pct, s.level, 'Presupuesto mensual utilizado', pace ? { marker: pace.pct, markerLabel: `Ritmo ideal hoy: ${formatMoney(pace.amount)}` } : {})}
-        <p class="budget-status"><strong>${formatPercent(s.pct)}</strong> utilizado · ${STATUS[s.level].text}</p>
+        <p class="budget-status"><strong>${formatPercent(s.pct)}</strong> utilizado${p ? '' : ` · ${STATUS[s.level].text}`}</p>
+        ${p ? `${planFiguresHTML(p)}${planNote(p)}` : monthNote}
         ${paceText}
-        ${isCurrent && s.available > 0 && daysLeft > 0
-          ? `<p class="hint">${Icons.get('wallet', 14)}<span>Puedes gastar <strong>${formatMoney(Math.floor(s.available / daysLeft))}</strong> al día durante los ${daysLeft} días que quedan de mes.</span></p>`
-          : ''}`
+        ${fixedText}`
       : '<p class="muted">Aún no has definido un presupuesto mensual. Establece una cantidad máxima de gasto para cada mes.</p>';
 
     return `
@@ -193,7 +227,7 @@ const Budget = (() => {
             <h2 class="card-title">${Icons.get('pie', 18)}Presupuesto mensual</h2>
             <p class="card-subtitle">${Utils.monthLabel(key)}</p>
           </div>
-          ${s.limit ? statusPill(s.level) : ''}
+          ${!s.limit ? '' : p && p.status === 'fast' && s.level === 'ok' ? statusPill('warn', 'Ritmo alto') : statusPill(s.level)}
         </div>
         ${body}
         <form class="inline-form" id="monthly-budget-form" novalidate>
@@ -213,9 +247,12 @@ const Budget = (() => {
       </div>`;
   }
 
-  function categoryCardHTML(s) {
+  function categoryCardHTML(s, daysLeft) {
     const name = escapeHTML(s.category.name);
     const id = escapeHTML(s.categoryId);
+    const perDay = daysLeft && s.available > 0
+      ? `<p class="budget-card-daily">${Icons.get('calendar', 14)}Unos ${formatMoney(Math.round(s.available / daysLeft))} al día durante ${daysLeft} día(s)</p>`
+      : '';
     return `
       <article class="card budget-card level-${s.level}">
         <header class="budget-card-header">
@@ -242,7 +279,7 @@ const Budget = (() => {
         </div>
         ${s.level === 'over'
           ? `<p class="budget-warning">${Icons.get('alert', 16)}Has superado tu presupuesto de ${escapeHTML(s.category.name.toLowerCase())}</p>`
-          : ''}
+          : perDay}
       </article>`;
   }
 
@@ -253,6 +290,8 @@ const Budget = (() => {
     const monthly = data().monthly;
     const limited = statuses.map((s) => s.categoryId);
     const unlimited = Stats.categoriesForMonth(key).filter((c) => !limited.includes(c.categoryId) && Categories.exists(c.categoryId, 'expense'));
+    // Días que quedan (con hoy) para repartir lo que queda de cada límite; solo en el mes actual
+    const daysLeft = key === Utils.currentMonthKey() ? Utils.daysInMonth(key) - new Date().getDate() + 1 : 0;
 
     view.innerHTML = `
       <div class="grid grid-2-1">
@@ -293,7 +332,7 @@ const Budget = (() => {
       </div>
 
       ${statuses.length
-        ? `<div class="budget-grid">${statuses.map(categoryCardHTML).join('')}</div>`
+        ? `<div class="budget-grid">${statuses.map((s) => categoryCardHTML(s, daysLeft)).join('')}</div>`
         : `<div class="card">${UI.emptyState({
           icon: 'pie', title: 'Sin límites por categoría',
           text: 'Define cuánto quieres gastar como máximo en cada categoría (por ejemplo, 300 € en alimentación).',
@@ -322,5 +361,5 @@ const Budget = (() => {
     UI.liveClearErrors(form);
   }
 
-  return { data, monthlyStatus, idealPace, categoryStatuses, alerts, render, actions, init };
+  return { data, monthlyStatus, idealPace, plan, planNote, planFiguresHTML, categoryStatuses, render, actions, init };
 })();

@@ -92,27 +92,39 @@
       Storage.prototype.setItem = function (key, value) { memory.set(key, String(value)); };
       Storage.prototype.removeItem = function (key) { memory.delete(key); };
       Storage.prototype.clear = function () { memory.clear(); };
+      Storage.prototype.key = function (index) { return [...memory.keys()][index] ?? null; };
+      Object.defineProperty(Storage.prototype, 'length', { configurable: true, get() { return memory.size; } });
     })();
   </script>
 </head>
 <body>
   <h1>Tests de MyBudget</h1>
-  <p class="muted">Cálculos de dinero, fechas de los gastos recurrentes y estadísticas.</p>
+  <p class="muted">Dinero, fechas, recurrentes, estadísticas, presupuesto, objetivos, avisos, consejos, búsqueda, recibos, migraciones e importación.</p>
   <div id="results"><p>Ejecutando tests…</p></div>
 
   <!-- Módulos de la app necesarios para los tests (mismo orden que en index.html) -->
   <script src="../js/utils.js"></script>
   <script src="../js/icons.js"></script>
+  <script src="../js/validation.js"></script>
+  <script src="../js/finance.js"></script>
+  <script src="../js/migrations.js"></script>
   <script src="../js/storage.js"></script>
   <script src="../js/ui.js"></script>
+  <script src="../js/receipts.js"></script>
   <script src="../js/categories.js"></script>
   <script src="../js/transactions.js"></script>
+  <script src="../js/budget.js"></script>
   <script src="../js/recurring.js"></script>
+  <script src="../js/goals.js"></script>
   <script src="../js/statistics.js"></script>
+  <script src="../js/alerts.js"></script>
+  <script src="../js/insights.js"></script>
 
   <!-- Runner y tests -->
   <script src="runner.js"></script>
   <script src="tests.js"></script>
+  <script src="finance-tests.js"></script>
+  <script src="data-tests.js"></script>
   <script>Test.render();</script>
 </body>
 </html>

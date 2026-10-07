@@ -32,6 +32,9 @@
     <span>Cargando tus finanzas…</span>
   </div>
 
+  <!-- Accesibilidad: con el teclado, saltar directamente al contenido -->
+  <button type="button" class="skip-link" id="skip-link">Saltar al contenido</button>
+
   <div class="app" id="app">
     <!-- ============ SIDEBAR ============ -->
     <aside class="sidebar" id="sidebar" aria-label="Menú principal">
@@ -51,7 +54,10 @@
         <a href="#/presupuestos" class="nav-link" data-view="presupuestos"><span data-icon="pie"></span>Presupuestos<kbd>4</kbd></a>
         <a href="#/objetivos" class="nav-link" data-view="objetivos"><span data-icon="target"></span>Objetivos<kbd>5</kbd></a>
         <a href="#/recurrentes" class="nav-link" data-view="recurrentes"><span data-icon="repeat"></span>Recurrentes<kbd>6</kbd></a>
-        <a href="#/configuracion" class="nav-link" data-view="configuracion"><span data-icon="settings"></span>Configuración<kbd>7</kbd></a>
+        <span class="nav-section">Análisis</span>
+        <a href="#/comparar" class="nav-link" data-view="comparar"><span data-icon="compare"></span>Comparar<kbd>7</kbd></a>
+        <a href="#/informe" class="nav-link" data-view="informe"><span data-icon="fileText"></span>Informe<kbd>8</kbd></a>
+        <a href="#/configuracion" class="nav-link" data-view="configuracion"><span data-icon="settings"></span>Configuración<kbd>9</kbd></a>
       </nav>
 
       <!-- Resumen del mes seleccionado (lo rellena app.js) -->
@@ -86,7 +92,7 @@
 
         <div class="global-search" id="global-search">
           <span class="search-icon" data-icon="search" data-size="18"></span>
-          <input type="search" id="global-search-input" placeholder="Buscar movimientos, objetivos…" autocomplete="off" aria-label="Buscador global">
+          <input type="search" id="global-search-input" placeholder="Buscar movimientos, importes, categorías…" autocomplete="off" aria-label="Buscador global" aria-controls="global-search-results">
           <kbd class="search-kbd">/</kbd>
           <div class="search-results" id="global-search-results" role="listbox" hidden></div>
         </div>
@@ -102,13 +108,15 @@
         </button>
       </header>
 
-      <main class="content" id="content">
+      <main class="content" id="content" tabindex="-1">
         <section class="view" id="view-dashboard" data-title="Dashboard" aria-labelledby="view-title"></section>
         <section class="view" id="view-movimientos" data-title="Movimientos"></section>
         <section class="view" id="view-estadisticas" data-title="Estadísticas"></section>
         <section class="view" id="view-presupuestos" data-title="Presupuestos"></section>
         <section class="view" id="view-objetivos" data-title="Objetivos"></section>
         <section class="view" id="view-recurrentes" data-title="Recurrentes"></section>
+        <section class="view" id="view-comparar" data-title="Comparar"></section>
+        <section class="view" id="view-informe" data-title="Informe"></section>
         <section class="view" id="view-configuracion" data-title="Configuración"></section>
       </main>
     </div>
@@ -175,6 +183,22 @@
             <label for="tx-notes">Notas <span class="muted">(opcional)</span></label>
             <textarea id="tx-notes" name="notes" rows="2" maxlength="300" placeholder="Información adicional…"></textarea>
           </div>
+          <div class="field span-2 receipt-field">
+            <span class="field-label" id="tx-receipt-label">Recibo <span class="muted">(opcional)</span></span>
+            <div class="receipt-picker">
+              <input type="file" id="tx-receipt" name="receipt" class="receipt-input sr-only" accept="image/jpeg,image/png,image/webp"
+                aria-labelledby="tx-receipt-label tx-receipt-add" aria-describedby="tx-receipt-hint">
+              <label for="tx-receipt" class="btn btn-ghost btn-sm receipt-add" id="tx-receipt-add">
+                <span data-icon="camera" data-size="16"></span><span class="receipt-add-text">Añadir recibo</span>
+              </label>
+              <div class="receipt-preview" id="tx-receipt-preview" hidden>
+                <img id="tx-receipt-img" alt="Vista previa del recibo (pulsa para ampliar)" title="Ampliar">
+                <span class="receipt-meta" id="tx-receipt-meta"></span>
+                <button type="button" class="btn btn-link btn-sm" id="tx-receipt-remove">Quitar recibo</button>
+              </div>
+            </div>
+            <p class="hint receipt-hint" id="tx-receipt-hint">JPG, PNG o WEBP de hasta 10 MB. Se reduce y se guarda solo en este navegador (nunca se sube a ningún servidor), pero ocupa espacio de almacenamiento local.</p>
+          </div>
         </div>
       </div>
       <footer class="modal-footer">
@@ -205,8 +229,12 @@
             </select>
           </div>
           <div class="field">
-            <label for="cat-color">Color</label>
+            <label for="cat-color">Color personalizado</label>
             <input type="color" id="cat-color" name="color" value="#5b5bd6">
+          </div>
+          <div class="field span-2">
+            <span class="field-label" id="color-swatches-label">Colores sugeridos</span>
+            <div class="color-swatches" id="color-swatches" role="group" aria-labelledby="color-swatches-label"></div>
           </div>
           <div class="field span-2">
             <label for="cat-icon">Icono *</label>
@@ -379,6 +407,90 @@
     </form>
   </dialog>
 
+  <!-- ============ MODAL: ELIMINAR CATEGORÍA CON MOVIMIENTOS ============ -->
+  <dialog class="modal modal-sm" id="category-delete-modal" aria-labelledby="category-delete-title">
+    <form id="category-delete-form" novalidate>
+      <header class="modal-header">
+        <h2 id="category-delete-title">Eliminar categoría</h2>
+        <button type="button" class="btn-icon" data-close aria-label="Cerrar" data-icon="x"></button>
+      </header>
+      <div class="modal-body">
+        <p id="category-delete-message" class="muted"></p>
+        <div class="field">
+          <label for="category-delete-target">Mover los movimientos a *</label>
+          <select id="category-delete-target" name="target"></select>
+        </div>
+        <p class="hint" id="category-delete-budget" hidden><span data-icon="info" data-size="14"></span><span>El límite de presupuesto de esta categoría se eliminará.</span></p>
+      </div>
+      <footer class="modal-footer">
+        <button type="button" class="btn btn-ghost" data-close>Cancelar</button>
+        <button type="submit" class="btn btn-danger">Mover y eliminar</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <!-- ============ MODAL: ESTADÍSTICAS DE UNA CATEGORÍA ============ -->
+  <dialog class="modal" id="category-stats-modal" aria-labelledby="category-stats-title">
+    <header class="modal-header">
+      <div class="modal-title-media">
+        <span id="category-stats-badge"></span>
+        <div>
+          <h2 id="category-stats-title">Categoría</h2>
+          <p class="muted" id="category-stats-subtitle"></p>
+        </div>
+      </div>
+      <button type="button" class="btn-icon" data-close aria-label="Cerrar" data-icon="x"></button>
+    </header>
+    <div class="modal-body" id="category-stats-body"></div>
+    <footer class="modal-footer">
+      <button type="button" class="btn btn-ghost" data-action="category-stats-edit">Editar categoría</button>
+      <button type="button" class="btn btn-primary" data-action="category-movements">Ver movimientos</button>
+    </footer>
+  </dialog>
+
+  <!-- ============ MODAL: VISOR DE RECIBOS ============ -->
+  <dialog class="modal modal-receipt" id="receipt-modal" aria-labelledby="receipt-title">
+    <header class="modal-header">
+      <div>
+        <h2 id="receipt-title">Recibo</h2>
+        <p class="muted" id="receipt-subtitle"></p>
+      </div>
+      <button type="button" class="btn-icon" data-close aria-label="Cerrar" data-icon="x"></button>
+    </header>
+    <div class="modal-body receipt-body">
+      <img id="receipt-image" alt="">
+    </div>
+    <footer class="modal-footer">
+      <button type="button" class="btn btn-ghost btn-danger-ghost" id="receipt-delete"><span data-icon="trash" data-size="16"></span>Eliminar recibo</button>
+      <a class="btn btn-ghost" id="receipt-download" href="#" download><span data-icon="download" data-size="16"></span>Descargar</a>
+      <button type="button" class="btn btn-primary" data-close>Cerrar</button>
+    </footer>
+  </dialog>
+
+  <!-- ============ MODAL: VISTA PREVIA DE UNA IMPORTACIÓN ============ -->
+  <dialog class="modal" id="import-modal" aria-labelledby="import-title">
+    <header class="modal-header">
+      <h2 id="import-title">Importar copia de seguridad</h2>
+      <button type="button" class="btn-icon" data-close aria-label="Cerrar" data-icon="x"></button>
+    </header>
+    <div class="modal-body">
+      <p class="muted" id="import-file"></p>
+      <div>
+        <h3 class="list-title">El archivo contiene</h3>
+        <ul class="kv-list" id="import-summary"></ul>
+      </div>
+      <p class="alert alert-warn"><span class="alert-icon" data-icon="alert" data-size="18"></span><span class="alert-text" id="import-current"></span></p>
+      <label class="check-row">
+        <input type="checkbox" id="import-backup">
+        <span>Descargar antes una copia de seguridad de mis datos actuales</span>
+      </label>
+    </div>
+    <footer class="modal-footer">
+      <button type="button" class="btn btn-ghost" data-close>Cancelar</button>
+      <button type="button" class="btn btn-primary" id="import-confirm">Reemplazar e importar</button>
+    </footer>
+  </dialog>
+
   <!-- ============ MODAL: CONFIRMACIÓN ============ -->
   <dialog class="modal modal-sm modal-confirm" id="confirm-modal" aria-labelledby="confirm-title">
     <div class="modal-body confirm-body">
@@ -412,7 +524,7 @@
         <li><span>Nuevo gasto</span><kbd>N</kbd></li>
         <li><span>Nuevo ingreso</span><kbd>I</kbd></li>
         <li><span>Buscar</span><span><kbd>/</kbd> o <kbd>Ctrl</kbd>+<kbd>K</kbd></span></li>
-        <li><span>Ir a una sección</span><span><kbd>1</kbd> … <kbd>7</kbd></span></li>
+        <li><span>Ir a una sección</span><span><kbd>1</kbd> … <kbd>9</kbd></span></li>
         <li><span>Mes anterior / siguiente</span><span><kbd>←</kbd> <kbd>→</kbd></span></li>
         <li><span>Cambiar tema</span><kbd>T</kbd></li>
         <li><span>Mostrar esta ayuda</span><kbd>?</kbd></li>
@@ -430,16 +542,24 @@
   <!-- Scripts de la aplicación (el orden importa) -->
   <script src="js/utils.js"></script>
   <script src="js/icons.js"></script>
+  <script src="js/validation.js"></script>
+  <script src="js/finance.js"></script>
+  <script src="js/migrations.js"></script>
   <script src="js/storage.js"></script>
   <script src="js/ui.js"></script>
+  <script src="js/receipts.js"></script>
   <script src="js/categories.js"></script>
   <script src="js/transactions.js"></script>
   <script src="js/budget.js"></script>
   <script src="js/recurring.js"></script>
   <script src="js/goals.js"></script>
   <script src="js/statistics.js"></script>
+  <script src="js/alerts.js"></script>
+  <script src="js/insights.js"></script>
   <script src="js/charts.js"></script>
   <script src="js/statistics-view.js"></script>
+  <script src="js/compare-view.js"></script>
+  <script src="js/report.js"></script>
   <script src="js/dashboard.js"></script>
   <script src="js/settings.js"></script>
   <script src="js/demo.js"></script>

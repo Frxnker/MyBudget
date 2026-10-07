@@ -32,17 +32,33 @@ const Goals = (() => {
     UI.toast(`Objetivo "${goal.name}" eliminado`, 'info');
   }
 
-  /** Progreso y cuánto hay que ahorrar al mes para llegar a tiempo */
+  /**
+   * Progreso, cuánto hay que ahorrar al mes y a la semana para llegar a tiempo y si se va al ritmo
+   * necesario (ver Finance.goalPlan). Incluye { pct, remaining, completed, monthsLeft, monthlyNeeded… }
+   */
   function progress(goal) {
-    const pct = percent(goal.saved, goal.target);
-    const remaining = Math.max(goal.target - goal.saved, 0);
-    let monthlyNeeded = null;
-    let monthsLeft = null;
-    if (goal.deadline && remaining > 0) {
-      monthsLeft = Utils.monthDiff(Utils.currentMonthKey(), Utils.monthKey(goal.deadline));
-      monthlyNeeded = monthsLeft > 0 ? Math.ceil(remaining / monthsLeft) : remaining;
+    return Finance.goalPlan(goal, Utils.todayISO());
+  }
+
+  /** Mes y año de la fecha objetivo: "Diciembre 2027" */
+  function deadlineLabel(goal) {
+    return goal.deadline ? Utils.monthLabel(Utils.monthKey(goal.deadline)) : '';
+  }
+
+  /** Frase de estado del plan de ahorro (icono + texto) */
+  function planNote(goal, p) {
+    switch (p.status) {
+      case 'completed':
+        return UI.statusNote('ok', '¡Objetivo alcanzado!');
+      case 'overdue':
+        return UI.statusNote('over', `La fecha objetivo (${formatDate(goal.deadline)}) ya ha pasado y faltan <strong>${formatMoney(p.remaining)}</strong>. Puedes ampliarla editando el objetivo.`);
+      case 'behind':
+        return UI.statusNote('warn', `Vas por detrás del ritmo necesario: a estas alturas deberías llevar <strong>${formatMoney(p.expected)}</strong> (te faltan ${formatMoney(p.shortfall)}).`);
+      case 'on-track':
+        return UI.statusNote('ok', 'Vas al ritmo necesario para llegar a tiempo.');
+      default:
+        return `<p class="hint">${Icons.get('calendar', 14)}<span>Añade una fecha objetivo para saber cuánto ahorrar cada mes.</span></p>`;
     }
-    return { pct, remaining, completed: goal.saved >= goal.target, monthsLeft, monthlyNeeded };
   }
 
   /* ---------------------------------------------------------------
@@ -82,13 +98,16 @@ const Goals = (() => {
     else if (deadline && deadline < Utils.todayISO() && !editingId) errors.deadline = 'La fecha límite no puede estar en el pasado.';
     if (!UI.showErrors(form, errors)) return;
 
-    save({
+    const data = {
       name,
       target: target.cents,
       saved: saved.cents,
       deadline,
       icon: form.elements.icon.value.trim() || '🎯',
-    }, editingId);
+    };
+    // Lo ahorrado al crearlo es el punto de partida para medir el ritmo de ahorro
+    if (!editingId) data.startSaved = saved.cents;
+    save(data, editingId);
     UI.closeModal('goal-modal');
     UI.toast(editingId ? 'Objetivo actualizado' : `Objetivo "${name}" creado`);
   }
@@ -133,6 +152,13 @@ const Goals = (() => {
   /** Versión compacta (usada en el dashboard) */
   function miniHTML(goal) {
     const p = progress(goal);
+    const STATUS_TEXT = {
+      completed: '<span class="text-success">Completado</span>',
+      'on-track': `<span class="text-success">Al día</span> · ${formatMoney(p.monthlyNeeded || 0)}/mes`,
+      behind: `<span class="text-warn">Por detrás</span> · ${formatMoney(p.monthlyNeeded || 0)}/mes`,
+      overdue: '<span class="text-danger">Plazo vencido</span>',
+      'no-deadline': 'Sin fecha objetivo',
+    };
     return `
       <li class="goal-mini">
         <span class="goal-mini-icon" aria-hidden="true">${escapeHTML(goal.icon)}</span>
@@ -142,7 +168,7 @@ const Goals = (() => {
             <span>${formatPercent(p.pct)}</span>
           </div>
           ${UI.progressBar(p.pct, 'goal', `Progreso de ${goal.name}`)}
-          <small class="muted">${formatMoney(goal.saved)} de ${formatMoney(goal.target)}</small>
+          <small class="muted">${formatMoney(goal.saved)} de ${formatMoney(goal.target)} · ${STATUS_TEXT[p.status]}</small>
         </div>
       </li>`;
   }
@@ -151,14 +177,16 @@ const Goals = (() => {
     const p = progress(goal);
     const id = escapeHTML(goal.id);
     const name = escapeHTML(goal.name);
-    let deadlineText = '';
-    if (goal.deadline) {
-      deadlineText = p.completed
-        ? `Fecha límite: ${formatDate(goal.deadline)}`
-        : goal.deadline < Utils.todayISO()
-          ? `<span class="text-danger">La fecha límite (${formatDate(goal.deadline)}) ya ha pasado</span>`
-          : `Ahorra <strong>${formatMoney(p.monthlyNeeded)}/mes</strong> para llegar antes del ${formatDate(goal.deadline)}`;
-    }
+    const showPlan = goal.deadline && !p.completed && p.status !== 'overdue';
+    const planHTML = showPlan ? `
+      <dl class="goal-plan">
+        <div><dt>Fecha objetivo</dt><dd>${deadlineLabel(goal)}</dd></div>
+        <div><dt>Necesario</dt><dd>${formatMoney(p.monthlyNeeded)}<small>/mes</small></dd></div>
+        <div><dt>Por semana</dt><dd>${formatMoney(p.weeklyNeeded)}<small>/sem.</small></dd></div>
+      </dl>
+      ${p.expected !== null ? UI.progressBar(p.pct, p.status === 'behind' ? 'warn' : 'goal', `Progreso de ${goal.name} respecto al ritmo necesario`, {
+        marker: p.expectedPct, markerLabel: `Lo esperado a día de hoy: ${formatMoney(p.expected)}`,
+      }) : ''}` : '';
     return `
       <article class="card goal-card ${p.completed ? 'is-complete' : ''}">
         <header class="goal-header">
@@ -178,11 +206,12 @@ const Goals = (() => {
             <strong class="goal-ring-label">${formatPercent(p.pct)}</strong>
           </div>
           <dl class="goal-figures">
-            <div><dt>Ahorrado</dt><dd>${UI.money(goal.saved)}</dd></div>
-            <div><dt>Objetivo</dt><dd>${formatMoney(goal.target)}</dd></div>
+            <div><dt>Ahorrado</dt><dd>${UI.money(goal.saved)} <span class="goal-target">/ ${formatMoney(goal.target)}</span></dd></div>
+            <div><dt>${p.completed ? 'Objetivo' : 'Restante'}</dt><dd>${formatMoney(p.completed ? goal.target : p.remaining)}</dd></div>
           </dl>
         </div>
-        ${deadlineText ? `<p class="goal-deadline">${Icons.get('calendar', 16)}<span>${deadlineText}</span></p>` : ''}
+        ${planHTML}
+        ${planNote(goal, p)}
         <button class="btn btn-ghost btn-block" data-action="contribute-goal" data-id="${id}">${Icons.get('coins', 16)}Actualizar ahorro</button>
       </article>`;
   }
@@ -238,5 +267,5 @@ const Goals = (() => {
     UI.liveClearErrors(contribution);
   }
 
-  return { all, progress, miniHTML, render, actions, init };
+  return { all, get, progress, deadlineLabel, miniHTML, render, actions, init };
 })();

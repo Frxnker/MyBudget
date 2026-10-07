@@ -5,6 +5,9 @@
 const Dashboard = (() => {
   const { $, escapeHTML, formatMoney, formatPercent, formatDate, monthLabel } = Utils;
 
+  const MAX_ALERTS = 3;        // avisos visibles antes de "Ver más"
+  let showAllAlerts = false;
+
   function greeting() {
     const hour = new Date().getHours();
     const name = Store.get('settings').userName;
@@ -35,17 +38,61 @@ const Dashboard = (() => {
       </div>`;
   }
 
-  function alertsHTML(key) {
-    const alerts = Budget.alerts(key);
-    if (!alerts.length) return '';
-    return `<div class="alerts">${alerts.map((a) => `
-      <div class="alert alert-${a.level}" role="alert">
-        ${Icons.get('alert', 18)}<span>${escapeHTML(a.message)}</span>
-        <a href="#/presupuestos" class="alert-link"><span class="label-long">Ver presupuestos</span><span class="label-short">Ver</span></a>
-      </div>`).join('')}</div>`;
+  /* ---------------------------------------------------------------
+   * AVISOS
+   * ------------------------------------------------------------- */
+
+  function alertItemHTML(alert) {
+    return `
+      <div class="alert alert-${alert.level}">
+        <span class="alert-icon">${Icons.get(alert.icon, 18)}</span>
+        <span class="alert-text">${escapeHTML(alert.message)}</span>
+        ${alert.link ? `<a href="${alert.link.href}" class="alert-link"><span class="label-long">${alert.link.label}</span><span class="label-short">Ver</span></a>` : ''}
+      </div>`;
   }
 
-  /** Tarjeta principal: saldo, variación del mes y evolución del saldo */
+  function alertsHTML(alerts) {
+    if (!alerts.length) return '';
+    const visible = showAllAlerts ? alerts : alerts.slice(0, MAX_ALERTS);
+    const hidden = alerts.length - visible.length;
+    const toggle = alerts.length > MAX_ALERTS
+      ? `<button type="button" class="alerts-toggle" data-action="toggle-alerts" aria-expanded="${showAllAlerts}">
+          ${showAllAlerts ? 'Mostrar menos avisos' : `Ver ${hidden} aviso${hidden > 1 ? 's' : ''} más`}${Icons.get(showAllAlerts ? 'chevronUp' : 'chevronDown', 16)}
+        </button>`
+      : '';
+    return `<section class="alerts" aria-label="Avisos">${visible.map(alertItemHTML).join('')}${toggle}</section>`;
+  }
+
+  /* ---------------------------------------------------------------
+   * SALDO Y DINERO DISPONIBLE
+   * ------------------------------------------------------------- */
+
+  /**
+   * Dinero disponible = saldo actual − pagos recurrentes pendientes (hasta el horizonte elegido en
+   * Configuración). Es solo un cálculo: el saldo real no cambia.
+   */
+  function availableHTML() {
+    const horizon = Store.get('settings').availableHorizon;
+    if (horizon === 'off') return '';
+    const { list, until } = Recurring.pending(horizon);
+    const money = Finance.availableMoney(Stats.balance(), list.map((o) => o.item.amount));
+    const period = horizon === 'month' ? `hasta el ${formatDate(until, 'dayMonth')}` : `próximos ${horizon} días`;
+    return `
+      <div class="hero-available">
+        <div>
+          <span>Pagos próximos</span>
+          <strong>${money.pending ? formatMoney(-money.pending) : formatMoney(0)}</strong>
+          <small>${money.count} pago${money.count === 1 ? '' : 's'} · ${period}</small>
+        </div>
+        <div class="is-main">
+          <span>Dinero disponible</span>
+          <strong class="${money.available < 0 ? 'is-negative' : ''}">${UI.money(money.available)}</strong>
+          <small><a href="#/configuracion" class="hero-link">Configurar</a></small>
+        </div>
+      </div>`;
+  }
+
+  /** Tarjeta principal: saldo, variación del mes, dinero disponible y evolución del saldo */
   function heroHTML() {
     const balance = Stats.balance();
     const history = Stats.balanceHistory(6);
@@ -69,6 +116,7 @@ const Dashboard = (() => {
             <span class="hero-delta ${delta >= 0 ? 'is-up' : 'is-down'}">
               ${Icons.get(delta >= 0 ? 'arrowUp' : 'arrowDown', 14)}${formatMoney(delta, { sign: true })} este mes
             </span>` : '<span class="hero-delta">Añade tu primer movimiento para empezar</span>'}
+          ${hasData ? availableHTML() : ''}
         </div>
 
         ${hasData ? `
@@ -87,30 +135,83 @@ const Dashboard = (() => {
       </section>`;
   }
 
+  /* ---------------------------------------------------------------
+   * INDICADORES DEL MES (con la comparación con el mes anterior)
+   * ------------------------------------------------------------- */
+
   function kpisHTML(key) {
     const summary = Stats.monthSummary(key);
-    const trends = Stats.monthTrends(key);
+    const cmp = Stats.monthComparison(key);
+    const future = key > Utils.currentMonthKey();
+    // En el mes en curso se compara con el mismo periodo del mes anterior ("vs. 512 € a 7 sep.")
+    const label = cmp.partial ? `a ${formatDate(cmp.prevEnd, 'dayMonth')}` : `en ${Alerts.monthName(cmp.prevKey)}`;
+    const foot = (field, goodWhenUp) => {
+      if (future) return '<span class="trend trend-neutral">El mes aún no ha empezado</span>';
+      if (!cmp.previous.count) return UI.trendBadge(null);
+      return UI.compareFoot(cmp.current[field], cmp.previous[field], { goodWhenUp, label });
+    };
     const rateLevel = summary.rate >= 20 ? 'goal' : summary.rate >= 0 ? 'warn' : 'over';
-    const rateTrend = trends.rate === null ? ''
-      : `<span class="trend ${trends.rate >= 0 ? 'trend-good' : 'trend-bad'}">
-          <span class="trend-chip">${Icons.get(trends.rate >= 0 ? 'arrowUp' : 'arrowDown', 12)}${formatPercent(Math.abs(trends.rate))}</span>
-          <span class="trend-text">puntos vs. mes anterior</span>
-        </span>`;
+    const rateCompare = !future && cmp.current.income > 0 && cmp.previous.income > 0
+      ? UI.compareFoot(cmp.current.rate, cmp.previous.rate, { points: true, label })
+      : '';
 
     return `
       <div class="kpi-grid kpi-grid-2">
-        ${UI.kpi({ label: 'Ingresos', value: UI.money(summary.income), icon: 'arrowUpRight', tone: 'income', foot: UI.trendBadge(trends.income, true) })}
-        ${UI.kpi({ label: 'Gastos', value: UI.money(summary.expense), icon: 'arrowDownRight', tone: 'expense', foot: UI.trendBadge(trends.expense, false) })}
-        ${UI.kpi({ label: 'Ahorro del mes', value: UI.money(summary.savings), icon: 'coins', tone: 'savings', foot: UI.trendBadge(trends.savings, true) })}
+        ${UI.kpi({ label: 'Ingresos', value: UI.money(summary.income), icon: 'arrowUpRight', tone: 'income', foot: foot('income', true) })}
+        ${UI.kpi({ label: 'Gastos', value: UI.money(summary.expense), icon: 'arrowDownRight', tone: 'expense', foot: foot('expense', false) })}
+        ${UI.kpi({ label: 'Ahorro del mes', value: UI.money(summary.savings), icon: 'coins', tone: 'savings', foot: foot('savings', true) })}
         ${UI.kpi({
           label: 'Tasa de ahorro',
-          value: formatPercent(summary.rate),
+          value: summary.income > 0 ? formatPercent(summary.rate) : '—',
           icon: 'pie',
           tone: 'rate',
-          foot: `${UI.progressBar(Math.max(summary.rate, 0), rateLevel, 'Porcentaje de ahorro')}${rateTrend}`,
+          foot: `${UI.progressBar(Math.max(summary.rate, 0), rateLevel, 'Porcentaje de ahorro')}${rateCompare}`,
         })}
       </div>`;
   }
+
+  /* ---------------------------------------------------------------
+   * GRÁFICA DE EVOLUCIÓN
+   * ------------------------------------------------------------- */
+
+  /** Último día que muestra la gráfica: hoy o el final del mes elegido si ya terminó */
+  function chartEnd(key) {
+    const today = Utils.todayISO();
+    const end = Utils.monthEnd(key);
+    return end < today ? end : today;
+  }
+
+  function evolutionCardHTML(range) {
+    return `
+      <section class="card card-chart">
+        <div class="card-header card-header-wrap">
+          <h2 class="card-title">${Icons.get('chart', 18)}Evolución</h2>
+          ${UI.choiceGroup({
+            action: 'set-chart-range',
+            label: 'Periodo de la gráfica',
+            selected: range,
+            options: Object.entries(Finance.RANGES).map(([value, r]) => ({ value, label: r.label, short: r.short })),
+          })}
+        </div>
+        <div class="chart-box chart-md"><canvas id="dash-evolution" role="img" aria-label="Evolución del saldo, los ingresos y los gastos"></canvas></div>
+        <p class="chart-caption" id="dash-evolution-caption"></p>
+      </section>`;
+  }
+
+  /** Resumen en texto del periodo de la gráfica (también sirve a los lectores de pantalla) */
+  function evolutionCaption(buckets) {
+    const first = buckets[0];
+    const last = buckets[buckets.length - 1];
+    const opening = first.balance - first.income + first.expense;
+    const income = Utils.sumBy(buckets, (b) => b.income);
+    const expense = Utils.sumBy(buckets, (b) => b.expense);
+    return `Saldo: <strong>${formatMoney(opening)}</strong> → <strong>${formatMoney(last.balance)}</strong> · `
+      + `Ingresos: <strong class="amount-income">${formatMoney(income)}</strong> · Gastos: <strong>${formatMoney(expense)}</strong>`;
+  }
+
+  /* ---------------------------------------------------------------
+   * TARJETAS
+   * ------------------------------------------------------------- */
 
   function recentHTML() {
     const recent = Transactions.recent(6);
@@ -129,7 +230,7 @@ const Dashboard = (() => {
           <button class="tx-list-item" data-action="edit-tx" data-id="${escapeHTML(t.id)}" title="Editar movimiento">
             ${UI.categoryBadge(category)}
             <span class="grow">
-              <strong>${escapeHTML(t.concept)}</strong>
+              <strong>${escapeHTML(t.concept)}${t.receiptId ? `<span class="receipt-mark" title="Tiene recibo">${Icons.get('paperclip', 12)}<span class="sr-only"> (con recibo)</span></span>` : ''}</strong>
               <small>${escapeHTML(category.name)} · ${formatDate(t.date)}</small>
             </span>
             <strong class="tx-list-amount amount-${t.type}">${formatMoney(sign * t.amount, { sign: true })}</strong>
@@ -149,6 +250,17 @@ const Dashboard = (() => {
       });
     }
     const pace = Budget.idealPace(key, s.limit);
+    const p = Budget.plan(key);
+    const planHTML = p ? `
+      <dl class="budget-mini-plan">
+        <div><dt>Restante</dt><dd>${formatMoney(Math.max(p.remaining, 0))}</dd></div>
+        <div><dt>Días</dt><dd>${p.daysLeft}</dd></div>
+        <div><dt>Recomendado</dt><dd>${formatMoney(p.recommendedDaily)}<small>/día</small></dd></div>
+      </dl>
+      ${p.status === 'ok'
+        ? `<small class="budget-mini-status text-success">${Icons.get('check', 14)}Dentro del presupuesto previsto</small>`
+        : `<small class="budget-mini-status text-warn">${Icons.get('alert', 14)}${p.status === 'over' ? 'Presupuesto superado' : 'Gastas más rápido de lo recomendado'}</small>`}
+      <small class="muted">Previsión: ${formatMoney(p.projected)} a final de mes</small>` : '';
     return `
       ${s.limit ? `
         <div class="budget-mini">
@@ -157,7 +269,7 @@ const Dashboard = (() => {
             <span class="status-pill status-${s.level}">${formatPercent(s.pct, 0)}</span>
           </div>
           ${UI.progressBar(s.pct, s.level, 'Presupuesto mensual', pace ? { marker: pace.pct, markerLabel: `Ritmo ideal hoy: ${formatMoney(pace.amount)}` } : {})}
-          <small class="muted">${s.available >= 0 ? `Te quedan ${formatMoney(s.available)}` : `Te has pasado ${formatMoney(-s.available)}`}${pace ? ` · ritmo ideal hoy ${formatMoney(pace.amount)}` : ''}</small>
+          ${p ? planHTML : `<small class="muted">${s.available >= 0 ? `Te quedan ${formatMoney(s.available)}` : `Te has pasado ${formatMoney(-s.available)}`}</small>`}
         </div>` : ''}
       ${categories.length ? `<ul class="budget-mini-list">${categories.map((c) => `
         <li>
@@ -170,7 +282,8 @@ const Dashboard = (() => {
   }
 
   function upcomingHTML() {
-    const list = Recurring.upcoming(30).slice(0, 5);
+    const all = Recurring.upcoming(30);
+    const list = all.slice(0, 5);
     if (!list.length) {
       return UI.emptyState({
         icon: 'repeat', title: 'Sin pagos próximos',
@@ -178,7 +291,9 @@ const Dashboard = (() => {
         action: '<a class="btn btn-ghost btn-sm" href="#/recurrentes">Ir a recurrentes</a>',
       });
     }
-    return `<ul class="upcoming-list">${list.map(Recurring.upcomingItemHTML).join('')}</ul>`;
+    return `
+      <ul class="upcoming-list">${list.map(Recurring.upcomingItemHTML).join('')}</ul>
+      <div class="card-total"><span>${all.length} pago${all.length === 1 ? '' : 's'} en 30 días</span><strong>${formatMoney(Utils.sumBy(all, (o) => o.item.amount))}</strong></div>`;
   }
 
   function goalsHTML() {
@@ -202,7 +317,7 @@ const Dashboard = (() => {
         ${UI.categoryBadge(c.category, 'sm')}
         <div class="grow">
           <div class="rank-top">
-            <strong>${escapeHTML(c.category.name)}</strong>
+            <button type="button" class="link-button rank-name" data-action="category-stats" data-id="${escapeHTML(c.categoryId)}">${escapeHTML(c.category.name)}</button>
             <strong class="rank-value">${formatMoney(c.total)}</strong>
           </div>
           <div class="rank-bar"><span style="width:${c.pct.toFixed(1)}%;background:${c.category.color}"></span></div>
@@ -210,19 +325,37 @@ const Dashboard = (() => {
             <small>${formatPercent(c.pct, 0)} del gasto</small>
             ${c.change === null
               ? '<small>Nuevo este mes</small>'
-              : `<small class="${c.change > 0 ? 'text-danger' : 'text-success'}">${c.change > 0 ? '▲' : '▼'} ${formatPercent(Math.abs(c.change), 0)}</small>`}
+              : `<small class="${c.change > 0 ? 'text-danger' : 'text-success'}">${c.change > 0 ? '▲' : '▼'} ${formatPercent(Math.abs(c.change), 0)}<span class="sr-only"> respecto al mes anterior</span></small>`}
           </div>
         </div>
       </li>`).join('')}</ol>`;
   }
 
+  /** Consejos automáticos (los temas que ya muestra un aviso no se repiten) */
+  function insightsHTML(insights) {
+    if (!insights.length) {
+      return UI.emptyState({
+        icon: 'lightbulb', title: 'Aún no hay consejos',
+        text: 'Cuando tengas movimientos de varios meses aparecerán aquí análisis de tus finanzas.',
+      });
+    }
+    return `<ul class="insight-list">${insights.map((i) => `
+      <li class="insight insight-${i.tone}">
+        <span class="insight-icon">${Icons.get(i.icon, 16)}</span>
+        <p>${escapeHTML(i.text)}</p>
+      </li>`).join('')}</ul>`;
+  }
+
   function render(key) {
     const view = $('#view-dashboard');
     const month = monthLabel(key).split(' ')[0].toLowerCase();
+    const alerts = Alerts.forMonth(key);
+    const insights = Insights.withoutAlertTopics(Insights.forMonth(key), alerts);
+    const range = Store.get('settings').chartRange;
 
     view.innerHTML = `
       ${demoBannerHTML()}
-      ${alertsHTML(key)}
+      ${alertsHTML(alerts)}
 
       <div class="dashboard-top">
         ${heroHTML()}
@@ -230,10 +363,7 @@ const Dashboard = (() => {
       </div>
 
       <div class="grid grid-2-1">
-        <section class="card card-chart">
-          ${cardHeader('chart', 'Ingresos y gastos', '<a href="#/estadisticas" class="link">Ver estadísticas</a>')}
-          <div class="chart-box chart-md"><canvas id="dash-evolution" aria-label="Ingresos y gastos de los últimos 6 meses" role="img"></canvas></div>
-        </section>
+        ${evolutionCardHTML(range)}
         <section class="card">
           ${cardHeader('pie', `Gastos de ${month}`)}
           <div class="chart-box chart-doughnut">
@@ -268,11 +398,30 @@ const Dashboard = (() => {
           ${cardHeader('target', 'Objetivos de ahorro', '<a href="#/objetivos" class="link">Ver todos</a>')}
           ${goalsHTML()}
         </section>
-      </div>`;
+      </div>
 
-    Charts.monthlyBars('dash-evolution', key, 6);
+      <section class="card">
+        ${cardHeader('lightbulb', 'Consejos para ti', '<a href="#/informe" class="link">Generar informe</a>')}
+        ${insightsHTML(insights)}
+      </section>`;
+
+    const buckets = Stats.timeline(range, chartEnd(key));
+    Charts.timelineChart('dash-evolution', buckets);
+    const caption = $('#dash-evolution-caption');
+    if (caption) caption.innerHTML = Transactions.all().length ? evolutionCaption(buckets) : '';
     Charts.categoryDoughnut('dash-categories', key);
   }
 
-  return { render };
+  const actions = {
+    'toggle-alerts': () => {
+      showAllAlerts = !showAllAlerts;
+      App.render();
+    },
+    'set-chart-range': (range) => {
+      if (!Finance.RANGES[range]) return;
+      Store.set('settings', { ...Store.get('settings'), chartRange: range });
+    },
+  };
+
+  return { render, actions };
 })();

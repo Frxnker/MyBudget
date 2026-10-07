@@ -74,33 +74,61 @@ const Recurring = (() => {
     return dates;
   }
 
-  /** Próximo cobro a partir de hoy */
-  function nextDate(item) {
-    const today = todayISO();
-    const limit = Utils.toISODate(new Date(new Date().getFullYear() + 2, 0, 1));
-    return occurrences(item, today, limit)[0] || null;
+  /**
+   * Cobros de los recurrentes activos entre dos fechas, indicando si ya se han pagado
+   * (ver Finance.matchRecurring). Se miran los gastos de los meses completos: un pago registrado
+   * el día 14 cubre el cobro del día 15 del mismo mes.
+   * → { list: [{ item, date, paid }], matchedExpenses: gastos que corresponden a algún cobro }
+   */
+  function schedule(from, to) {
+    const list = all()
+      .filter((r) => r.active)
+      .flatMap((r) => occurrences(r, from, to).map((date) => ({ item: r, date })))
+      .sort((a, b) => a.date.localeCompare(b.date));
+    if (!list.length) return { list: [], matchedExpenses: [] };
+    const expenses = Transactions.between(`${from.slice(0, 7)}-01`, Utils.monthEnd(to.slice(0, 7)))
+      .filter((t) => t.type === 'expense');
+    const { paid, matched } = Finance.matchRecurring(list, expenses);
+    return {
+      list: list.map((o) => ({ ...o, paid: paid.has(`${o.item.id}|${o.date}`) })),
+      matchedExpenses: expenses.filter((t) => matched.has(t.id)),
+    };
   }
 
-  /** Próximos pagos de todos los recurrentes activos en los próximos "days" días */
+  /** Próximos pagos (aún sin registrar) de los recurrentes activos en los próximos "days" días */
   function upcoming(days = 30) {
     const from = todayISO();
-    const toDate = new Date();
-    toDate.setDate(toDate.getDate() + days);
-    const to = Utils.toISODate(toDate);
-    return all()
-      .filter((r) => r.active)
-      .flatMap((r) => occurrences(r, from, to).map((date) => ({ item: r, date })))
-      .sort((a, b) => a.date.localeCompare(b.date));
+    return schedule(from, Utils.addDays(from, days)).list.filter((o) => !o.paid);
   }
 
-  /** Cobros de un mes concreto */
-  function forMonth(key) {
-    const from = `${key}-01`;
-    const to = `${key}-${daysInMonth(key)}`;
-    return all()
-      .filter((r) => r.active)
-      .flatMap((r) => occurrences(r, from, to).map((date) => ({ item: r, date })))
-      .sort((a, b) => a.date.localeCompare(b.date));
+  /**
+   * Pagos pendientes desde hoy hasta el horizonte elegido en Configuración ("dinero disponible"):
+   * "month" = hasta final de mes, "7" / "30" = próximos días, "off" = no se descuenta nada.
+   */
+  function pending(horizon = 'month') {
+    if (horizon === 'off') return { list: [], until: null };
+    const from = todayISO();
+    const until = horizon === 'month' ? Utils.monthEnd(Utils.currentMonthKey()) : Utils.addDays(from, Number(horizon) || 30);
+    return { list: schedule(from, until).list.filter((o) => !o.paid), until };
+  }
+
+  /**
+   * Cobros de un mes separados en pagados y pendientes, y cuánto suman.
+   * fixedSpent (gastos del mes que son pagos recurrentes) y pendingFixed (lo que falta por cobrar
+   * desde hoy) se usan en la previsión del presupuesto.
+   */
+  function monthBreakdown(key) {
+    const today = todayISO();
+    const { list, matchedExpenses } = schedule(`${key}-01`, Utils.monthEnd(key));
+    const pendingList = list.filter((o) => !o.paid && o.date >= today);
+    return {
+      list,
+      paid: list.filter((o) => o.paid),
+      pending: pendingList,
+      overdue: list.filter((o) => !o.paid && o.date < today),
+      fixedSpent: Utils.sumBy(matchedExpenses, (t) => t.amount),
+      pendingFixed: Utils.sumBy(pendingList, (o) => o.item.amount),
+    };
   }
 
   /** Coste mensual equivalente (un seguro anual de 120 € = 10 €/mes) */
@@ -186,6 +214,13 @@ const Recurring = (() => {
    * VISTA
    * ------------------------------------------------------------- */
 
+  /** "Hoy", "Mañana", "en 5 días" */
+  function inDays(date) {
+    const days = Utils.daysUntil(date);
+    if (days <= 1) return Utils.relativeDays(date);
+    return `en ${days} días`;
+  }
+
   /** Elemento de "próximo pago" (reutilizado en el dashboard) */
   function upcomingItemHTML({ item, date }) {
     const category = Categories.get(item.categoryId);
@@ -195,17 +230,32 @@ const Recurring = (() => {
         ${UI.dateTile(date)}
         <div class="grow">
           <strong>${escapeHTML(item.name)}</strong>
-          <small>${escapeHTML(category.icon)} ${escapeHTML(category.name)} · <span class="${days <= 3 ? 'text-warn' : ''}">${Utils.relativeDays(date)}</span></small>
+          <small>${escapeHTML(category.icon)} ${escapeHTML(category.name)} · ${FREQUENCIES[item.frequency].label.toLowerCase()}</small>
         </div>
-        <strong class="upcoming-amount">${formatMoney(item.amount)}</strong>
+        <span class="upcoming-side">
+          <strong class="upcoming-amount">${formatMoney(item.amount)}</strong>
+          <small class="upcoming-when ${days <= 3 ? 'text-warn' : ''}">${inDays(date)}</small>
+        </span>
       </li>`;
   }
 
-  function itemCardHTML(item, next) {
+  /**
+   * Tarjeta de un recurrente. "info" = { next, paidThisMonth, overdue } calculado en render():
+   * próximo cobro sin pagar, si el cobro de este mes ya está registrado y si hay uno pasado sin registrar.
+   */
+  function itemCardHTML(item, info) {
+    const { next, paidThisMonth, overdue } = info;
     const category = Categories.get(item.categoryId);
     const freq = FREQUENCIES[item.frequency];
     const id = escapeHTML(item.id);
     const name = escapeHTML(item.name);
+    const days = next ? Utils.daysUntil(next) : null;
+    let status = '';
+    if (item.active && paidThisMonth) {
+      status = `<p class="recurring-status is-paid">${Icons.get('check', 14)}Pago de ${Utils.monthLabel(Utils.currentMonthKey()).split(' ')[0].toLowerCase()} registrado</p>`;
+    } else if (item.active && overdue) {
+      status = `<p class="recurring-status">${Icons.get('info', 14)}Pago del ${Utils.formatDate(overdue, 'dayMonth')} sin registrar</p>`;
+    }
     return `
       <article class="card recurring-card ${item.active ? '' : 'is-paused'}">
         <header class="recurring-header">
@@ -222,9 +272,10 @@ const Recurring = (() => {
             <span class="muted">${freq.label} · día ${item.day}</span>
           </div>
           ${next
-            ? `<div class="recurring-next">${UI.dateTile(next)}<span class="recurring-next-text"><small>Próximo pago</small>${Utils.relativeDays(next)}</span></div>`
+            ? `<div class="recurring-next">${UI.dateTile(next)}<span class="recurring-next-text"><small>Próximo pago</small><span class="${days <= 3 ? 'text-warn' : ''}">${Utils.capitalize(inDays(next))}</span></span></div>`
             : '<div class="recurring-next"><span class="recurring-next-text"><small>Próximo pago</small>En pausa</span></div>'}
         </div>
+        ${status}
         <footer class="card-footer-actions">
           <button class="btn btn-ghost btn-sm" data-action="pay-recurring" data-id="${id}">${Icons.get('receipt', 16)}Registrar pago</button>
           <div class="card-actions">
@@ -241,7 +292,7 @@ const Recurring = (() => {
     const items = all();
     const active = items.filter((r) => r.active);
     const monthlyTotal = Utils.sumBy(active, monthlyEquivalent);
-    const thisMonth = forMonth(key);
+    const thisMonth = monthBreakdown(key);
     const next = upcoming(30);
 
     if (!items.length) {
@@ -253,16 +304,33 @@ const Recurring = (() => {
       return;
     }
 
-    // La próxima fecha de cada recurrente se calcula una sola vez (no en cada comparación del sort)
+    // Cobros desde el día 1 de este mes: se calculan una sola vez para todas las tarjetas
+    const today = todayISO();
+    const currentKey = Utils.currentMonthKey();
+    const horizon = schedule(`${currentKey}-01`, Utils.addDays(today, 400)).list;
+    const infoFor = (item) => {
+      const own = horizon.filter((o) => o.item.id === item.id);
+      const current = own.filter((o) => o.date.startsWith(currentKey));
+      return {
+        next: item.active ? (own.find((o) => o.date >= today && !o.paid) || {}).date || null : null,
+        paidThisMonth: current.length > 0 && current.every((o) => o.paid),
+        overdue: (current.find((o) => !o.paid && o.date < today) || {}).date || null,
+      };
+    };
     const cards = items
-      .map((item) => ({ item, next: item.active ? nextDate(item) : null }))
-      .sort((a, b) => (b.item.active - a.item.active) || (a.next || '').localeCompare(b.next || ''));
+      .map((item) => ({ item, info: infoFor(item) }))
+      .sort((a, b) => (b.item.active - a.item.active) || (a.info.next || '').localeCompare(b.info.next || ''));
+
+    const monthName = Utils.monthLabel(key).split(' ')[0].toLowerCase();
+    const chargesFoot = thisMonth.list.length
+      ? `<span class="muted">${thisMonth.paid.length} pagado(s) · ${thisMonth.list.length - thisMonth.paid.length} sin registrar</span>`
+      : '<span class="muted">Sin cargos este mes</span>';
 
     view.innerHTML = `
       <div class="kpi-grid kpi-grid-4">
         ${UI.kpi({ label: 'Coste mensual', value: UI.money(monthlyTotal), icon: 'repeat', foot: '<span class="muted">Equivalente al mes</span>' })}
         ${UI.kpi({ label: 'Coste anual', value: UI.money(monthlyTotal * 12), icon: 'calendar', foot: '<span class="muted">Estimación a 12 meses</span>' })}
-        ${UI.kpi({ label: `Cargos en ${Utils.monthLabel(key).split(' ')[0].toLowerCase()}`, value: UI.money(Utils.sumBy(thisMonth, (o) => o.item.amount)), icon: 'receipt', foot: `<span class="muted">${thisMonth.length} pago(s)</span>` })}
+        ${UI.kpi({ label: `Cargos en ${monthName}`, value: UI.money(Utils.sumBy(thisMonth.list, (o) => o.item.amount)), icon: 'receipt', foot: chargesFoot })}
         ${UI.kpi({ label: 'Activos', value: `${active.length}<span class="kpi-value-minor"> / ${items.length}</span>`, icon: 'play', foot: '<span class="muted">Gastos recurrentes</span>' })}
       </div>
 
@@ -272,14 +340,15 @@ const Recurring = (() => {
             <h2>Tus gastos recurrentes</h2>
             <button class="btn btn-primary" data-action="add-recurring">${Icons.get('plus', 18)}Añadir</button>
           </div>
-          <div class="recurring-grid">${cards.map((c) => itemCardHTML(c.item, c.next)).join('')}</div>
+          <div class="recurring-grid">${cards.map((c) => itemCardHTML(c.item, c.info)).join('')}</div>
         </div>
         <aside class="card sticky-card">
           <h2 class="card-title">${Icons.get('clock', 18)}Próximos 30 días</h2>
           ${next.length
             ? `<ul class="upcoming-list">${next.map(upcomingItemHTML).join('')}</ul>
                <div class="card-total"><span>Total próximos 30 días</span><strong>${formatMoney(Utils.sumBy(next, (o) => o.item.amount))}</strong></div>`
-            : '<p class="muted">No hay pagos en los próximos 30 días.</p>'}
+            : '<p class="muted">No hay pagos pendientes en los próximos 30 días.</p>'}
+          <p class="hint">${Icons.get('info', 14)}<span>Los pagos ya registrados (con "Registrar pago" o un gasto de la misma categoría e importe en ese mes) no aparecen como pendientes.</span></p>
         </aside>
       </div>`;
   }
@@ -298,5 +367,8 @@ const Recurring = (() => {
     UI.liveClearErrors(form);
   }
 
-  return { FREQUENCIES, all, occurrences, upcoming, forMonth, monthlyEquivalent, upcomingItemHTML, render, actions, init };
+  return {
+    FREQUENCIES, all, get, occurrences, schedule, upcoming, pending, monthBreakdown,
+    monthlyEquivalent, inDays, upcomingItemHTML, render, actions, init,
+  };
 })();

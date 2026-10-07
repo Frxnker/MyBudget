@@ -47,18 +47,94 @@ const StatsView = (() => {
       </div>`;
   }
 
+  /** Ingresos del mes por categoría (lista con barras) */
+  function incomeListHTML(key) {
+    const items = Stats.incomeByCategory(key);
+    if (!items.length) return '<p class="muted">No hay ingresos este mes.</p>';
+    return `<ol class="rank-list rank-list-wide">${items.map((c) => `
+      <li>
+        ${UI.categoryBadge(c.category, 'sm')}
+        <div class="grow">
+          <div class="rank-top">
+            <button type="button" class="link-button rank-name" data-action="category-stats" data-id="${escapeHTML(c.categoryId)}">${escapeHTML(c.category.name)}</button>
+            <strong class="rank-value amount-income">${formatMoney(c.total)}</strong>
+          </div>
+          <div class="rank-bar"><span style="width:${c.pct.toFixed(1)}%;background:${c.category.color}"></span></div>
+          <div class="rank-bottom"><small>${formatPercent(c.pct, 0)} de los ingresos</small></div>
+        </div>
+      </li>`).join('')}</ol>`;
+  }
+
+  /** Tabla de gasto por categoría: el mes, su peso, la variación y la media de 6 meses */
+  function categoryTableHTML(key) {
+    const current = Stats.categoriesForMonth(key);
+    if (!current.length) return '<p class="muted">No hay gastos este mes.</p>';
+    const previous = Stats.categoriesForMonth(Utils.addMonths(key, -1));
+    const sums = {};
+    for (let i = 0; i < 6; i++) {
+      Stats.categoriesForMonth(Utils.addMonths(key, -i)).forEach((c) => { sums[c.categoryId] = (sums[c.categoryId] || 0) + c.total; });
+    }
+    const limits = Budget.data().byCategory;
+    return `
+      <div class="table-wrapper">
+        <table class="table category-table">
+          <caption class="sr-only">Gasto por categoría en ${monthLabel(key)}</caption>
+          <thead>
+            <tr>
+              <th scope="col">Categoría</th>
+              <th scope="col" class="th-amount">Este mes</th>
+              <th scope="col" class="th-amount">% del gasto</th>
+              <th scope="col" class="th-amount">vs. mes anterior</th>
+              <th scope="col" class="th-amount">Media 6 meses</th>
+              <th scope="col" class="th-amount">Límite</th>
+            </tr>
+          </thead>
+          <tbody>${current.map((c) => {
+            const prev = (previous.find((p) => p.categoryId === c.categoryId) || { total: 0 }).total;
+            const change = Stats.change(c.total, prev);
+            const limit = limits[c.categoryId];
+            return `
+              <tr>
+                <td data-label="Categoría"><span class="compare-category">${UI.categoryBadge(c.category, 'sm')}
+                  <button type="button" class="link-button" data-action="category-stats" data-id="${escapeHTML(c.categoryId)}">${escapeHTML(c.category.name)}</button></span></td>
+                <td data-label="Este mes" class="td-amount">${formatMoney(c.total)}</td>
+                <td data-label="% del gasto" class="td-amount">${formatPercent(c.pct)}</td>
+                <td data-label="vs. mes anterior" class="td-amount">${change === null
+                  ? '<span class="muted">Nuevo</span>'
+                  : `<span class="${change > 0 ? 'text-danger' : 'text-success'}">${change > 0 ? '▲' : '▼'} ${formatPercent(Math.abs(change), 0)}</span>`}</td>
+                <td data-label="Media 6 meses" class="td-amount">${formatMoney(Math.round((sums[c.categoryId] || 0) / 6))}</td>
+                <td data-label="Límite" class="td-amount">${limit ? `${formatMoney(limit)} <small class="muted">(${formatPercent(Utils.percent(c.total, limit), 0)})</small>` : '<span class="muted">—</span>'}</td>
+              </tr>`;
+          }).join('')}
+          </tbody>
+        </table>
+      </div>`;
+  }
+
   function render(key) {
     const view = $('#view-estadisticas');
     const year = Number(key.slice(0, 4));
     const month = Stats.monthStats(key);
     const y = Stats.yearStats(year);
     const trends = Stats.monthTrends(key);
+    const prevRate = Stats.monthSummary(Utils.addMonths(key, -1));
 
     view.innerHTML = `
+      <div class="page-actions">
+        <a class="btn btn-ghost" href="#/comparar">${Icons.get('compare', 18)}<span class="label-long">Comparar meses</span><span class="label-short">Comparar</span></a>
+        <a class="btn btn-ghost" href="#/informe">${Icons.get('fileText', 18)}<span class="label-long">Generar informe</span><span class="label-short">Informe</span></a>
+      </div>
+
       <div class="kpi-grid kpi-grid-4">
         ${UI.kpi({ label: 'Ingresos', value: UI.money(month.income), icon: 'arrowUpRight', tone: 'income', foot: UI.trendBadge(trends.income, true) })}
         ${UI.kpi({ label: 'Gastos', value: UI.money(month.expense), icon: 'arrowDownRight', tone: 'expense', foot: UI.trendBadge(trends.expense, false) })}
-        ${UI.kpi({ label: 'Ahorro', value: UI.money(month.savings), icon: 'coins', tone: 'savings', foot: UI.trendBadge(trends.savings, true) })}
+        ${UI.kpi({
+          label: 'Ahorro',
+          value: UI.money(month.savings),
+          icon: 'coins',
+          tone: 'savings',
+          foot: `${UI.trendBadge(trends.savings, true)}<span class="muted">Tasa de ahorro: <strong>${month.income > 0 ? formatPercent(month.rate) : '—'}</strong>${month.income > 0 && prevRate.income > 0 ? ` (${formatPercent(prevRate.rate)} el mes anterior)` : ''}</span>`,
+        })}
         ${UI.kpi({
           label: 'Gasto medio diario',
           value: UI.money(month.avgDaily),
@@ -85,6 +161,19 @@ const StatsView = (() => {
       <section class="card">
         <h2 class="card-title">${Icons.get('trendUp', 18)}Evolución mensual (últimos 12 meses)</h2>
         <div class="chart-box chart-lg"><canvas id="stats-evolution" role="img" aria-label="Evolución de ingresos, gastos y ahorro"></canvas></div>
+      </section>
+
+      <section class="card">
+        <div class="card-header">
+          <h2 class="card-title">${Icons.get('tag', 18)}Gasto por categoría</h2>
+          <a href="#/comparar" class="link">Comparar con otro mes</a>
+        </div>
+        ${categoryTableHTML(key)}
+      </section>
+
+      <section class="card">
+        <h2 class="card-title">${Icons.get('arrowUpRight', 18)}Ingresos por categoría</h2>
+        ${incomeListHTML(key)}
       </section>
 
       <div class="section-header">

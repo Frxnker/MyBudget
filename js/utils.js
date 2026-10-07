@@ -179,10 +179,26 @@ const Utils = (() => {
     return short ? capitalize(name.slice(0, 3)) : `${capitalize(name)} ${y}`;
   }
 
+  /** Suma (o resta) días a una fecha ISO: addDays("2026-10-30", 3) → "2026-11-02" */
+  function addDays(iso, amount) {
+    const date = parseISODate(iso);
+    date.setDate(date.getDate() + amount);
+    return toISODate(date);
+  }
+
+  /** Días entre dos fechas ISO (b - a). Math.round compensa los cambios de horario de verano */
+  function daysBetween(a, b) {
+    return Math.round((parseISODate(b) - parseISODate(a)) / 86400000);
+  }
+
+  /** Último día de un mes: "2026-02" → "2026-02-28" */
+  function monthEnd(key) {
+    return `${key}-${pad(daysInMonth(key))}`;
+  }
+
   /** Días entre hoy y una fecha ISO (negativo si ya pasó) */
   function daysUntil(iso) {
-    const ms = parseISODate(iso) - parseISODate(todayISO());
-    return Math.round(ms / 86400000);
+    return daysBetween(todayISO(), iso);
   }
 
   /** Texto relativo: "Hoy", "Mañana", "En 5 días" */
@@ -244,6 +260,13 @@ const Utils = (() => {
     return Math.min(Math.max(value, min), max);
   }
 
+  /** Tamaño legible: 2048 → "2,0 KB", 3145728 → "3,0 MB" */
+  function formatBytes(bytes) {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1).replace('.', ',')} KB`;
+    return `${(bytes / 1024 / 1024).toFixed(1).replace('.', ',')} MB`;
+  }
+
   /** Descarga un archivo generado en el navegador */
   function downloadFile(filename, content, mime = 'application/json') {
     const blob = new Blob([content], { type: mime });
@@ -260,7 +283,8 @@ const Utils = (() => {
   return {
     toCents, centsToInput, centsToEuros, moneyParts, formatMoney, formatPercent, percent,
     toISODate, todayISO, parseISODate, isValidISODate, isValidMonthKey, formatDate,
-    monthKey, currentMonthKey, addMonths, monthDiff, daysInMonth, monthLabel, daysUntil, relativeDays,
-    $, $$, escapeHTML, uid, capitalize, normalize, debounce, sumBy, clamp, downloadFile,
+    monthKey, currentMonthKey, addMonths, monthDiff, daysInMonth, monthEnd, monthLabel,
+    addDays, daysBetween, daysUntil, relativeDays,
+    $, $$, escapeHTML, uid, capitalize, normalize, debounce, sumBy, clamp, formatBytes, downloadFile,
   };
 })();

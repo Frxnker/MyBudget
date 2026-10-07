@@ -104,14 +104,17 @@ const Demo = (() => {
   }
 
   function goals() {
-    const deadline = `${addMonths(currentMonthKey(), 8)}-01`;
-    const goal = (name, icon, target, saved, dl = '') => ({
-      id: uid('goal'), name, icon, target: target * 100, saved: saved * 100, deadline: dl, createdAt: Date.now(), demo: true,
+    const monthStart = (offset) => `${addMonths(currentMonthKey(), offset)}-01`;
+    // Fecha de creación "hace N meses": con ella se mide si cada objetivo va al ritmo necesario
+    const createdMonthsAgo = (months) => Utils.parseISODate(monthStart(-months)).getTime();
+    const goal = (name, icon, target, saved, dl = '', monthsAgo = 0) => ({
+      id: uid('goal'), name, icon, target: target * 100, saved: saved * 100, startSaved: 0, deadline: dl,
+      createdAt: monthsAgo ? createdMonthsAgo(monthsAgo) : Date.now(), demo: true,
     });
     return [
-      goal('Viaje a Japón', '🗾', 2000, 850, deadline),
-      goal('Fondo de emergencia', '🛟', 3000, 1200),
-      goal('Portátil nuevo', '💻', 900, 900),
+      goal('Viaje a Japón', '🗾', 2000, 850, monthStart(8), 4),        // va al día
+      goal('Fondo de emergencia', '🛟', 3000, 1200, monthStart(4), 8), // va por detrás
+      goal('Portátil nuevo', '💻', 900, 900),                         // completado
     ];
   }
 

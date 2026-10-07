@@ -14,6 +14,8 @@ const App = (() => {
     presupuestos: { title: 'Presupuestos', subtitle: (m) => `Control de gasto de ${monthLabel(m)}`, month: true, render: (m) => Budget.render(m) },
     objetivos: { title: 'Objetivos', subtitle: () => 'Tus metas de ahorro', month: false, render: () => Goals.render() },
     recurrentes: { title: 'Recurrentes', subtitle: () => 'Suscripciones y pagos periódicos', month: true, render: (m) => Recurring.render(m) },
+    comparar: { title: 'Comparar', subtitle: () => 'Compara dos meses cualesquiera', month: false, render: (m) => CompareView.render(m) },
+    informe: { title: 'Informe', subtitle: (m) => `Informe mensual de ${monthLabel(m)}`, month: true, render: (m) => Report.render(m) },
     configuracion: { title: 'Configuración', subtitle: () => 'Preferencias y gestión de datos', month: false, render: () => Settings.render() },
   };
   const VIEW_ORDER = Object.keys(VIEWS);
@@ -213,6 +215,16 @@ const App = (() => {
       results.push({ group: 'Recurrentes', icon: escapeHTML(Categories.get(r.categoryId).icon), title: escapeHTML(r.name), meta: formatMoney(r.amount), run: () => navigate('recurrentes') });
     });
 
+    Categories.all().filter((c) => normalize(c.name).includes(q)).slice(0, 3).forEach((c) => {
+      results.push({
+        group: 'Categorías',
+        icon: escapeHTML(c.icon),
+        title: escapeHTML(c.name),
+        meta: `Categoría de ${c.type === 'income' ? 'ingresos' : 'gastos'} · ver estadísticas`,
+        run: () => Categories.openStats(c.id),
+      });
+    });
+
     return results;
   }
 
@@ -308,6 +320,10 @@ const App = (() => {
     ...Budget.actions,
     ...Recurring.actions,
     ...Goals.actions,
+    ...Categories.actions,
+    ...Dashboard.actions,
+    ...CompareView.actions,
+    ...Report.actions,
     ...Settings.actions,
     'select-month': (key) => setMonth(key),
     'set-theme': (theme) => { applyTheme(theme); render(); },
@@ -348,7 +364,7 @@ const App = (() => {
       if (lower === 'n') { event.preventDefault(); Transactions.openForm({ type: 'expense' }); return; }
       if (lower === 'i') { event.preventDefault(); Transactions.openForm({ type: 'income' }); return; }
       if (lower === 't') { toggleTheme(); return; }
-      if (/^[1-7]$/.test(key)) { navigate(VIEW_ORDER[Number(key) - 1]); return; }
+      if (/^[1-9]$/.test(key) && VIEW_ORDER[Number(key) - 1]) { navigate(VIEW_ORDER[Number(key) - 1]); return; }
       if (VIEWS[state.view].month && key === 'ArrowLeft') setMonth(Utils.addMonths(state.month, -1));
       if (VIEWS[state.view].month && key === 'ArrowRight') setMonth(Utils.addMonths(state.month, 1));
     });
@@ -369,7 +385,7 @@ const App = (() => {
   }
 
   function init() {
-    const { isFirstRun } = Store.init();
+    const { isFirstRun, migratedFrom, newerVersion, readErrors } = Store.init();
     if (isFirstRun) Demo.load();
 
     Charts.init();
@@ -377,9 +393,11 @@ const App = (() => {
     UI.initModals();
     Categories.init();
     Transactions.init();
+    Receipts.init();
     Budget.init();
     Recurring.init();
     Goals.init();
+    Settings.init();
 
     applyTheme(document.documentElement.dataset.theme || 'light');
     initMonthPicker();
@@ -396,6 +414,7 @@ const App = (() => {
       scheduleRender();
     });
 
+    $('#skip-link').addEventListener('click', () => $('#content').focus());
     $('#menu-toggle').addEventListener('click', openSidebar);
     $('#search-toggle').addEventListener('click', () => setMobileSearch(!$('.topbar').classList.contains('search-open')));
     $('#sidebar-close').addEventListener('click', closeSidebar);
@@ -415,6 +434,16 @@ const App = (() => {
       UI.toast('LocalStorage no está disponible: los cambios no se guardarán al cerrar el navegador.', 'warning', 8000);
     } else if (isFirstRun) {
       UI.toast('¡Bienvenido! Estos son datos de ejemplo', 'info', 4000);
+    } else if (migratedFrom) {
+      UI.toast('MyBudget se ha actualizado a la versión 1.1. Tus datos se han conservado y tienes una copia previa en Configuración.', 'success', 7000);
+    } else if (newerVersion) {
+      UI.toast('Tus datos se guardaron con una versión más reciente de MyBudget. Algunas funciones podrían no mostrarse.', 'warning', 8000);
+    }
+
+    // Borra las imágenes de recibos que ya no usa ningún movimiento (p. ej. si se cerró la app
+    // durante el "Deshacer" de un borrado). Si algún dato no se pudo leer, no se toca nada.
+    if (!readErrors && Transactions.all().length) {
+      Receipts.prune(new Set(Transactions.all().map((t) => t.receiptId).filter(Boolean))).catch(() => {});
     }
 
     // Ocultamos la pantalla de carga
@@ -425,5 +454,10 @@ const App = (() => {
 
   document.addEventListener('DOMContentLoaded', init);
 
-  return { navigate, applyTheme, render };
+  /** Mes elegido en el selector de mes ("AAAA-MM") */
+  function currentMonth() {
+    return state.month;
+  }
+
+  return { navigate, applyTheme, render, currentMonth };
 })();

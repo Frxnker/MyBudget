@@ -146,8 +146,12 @@ const Charts = (() => {
     if (existing && existing.config.type === config.type) {
       const oldBox = existing.canvas.closest('.chart-box');
       const newBox = canvas.closest('.chart-box');
-      // Se mueve la caja entera: Chart.js vigila el tamaño del contenedor, no solo del canvas
-      if (oldBox && newBox && oldBox !== newBox) newBox.replaceWith(oldBox);
+      // Se mueve la caja entera: Chart.js vigila el tamaño del contenedor, no solo del canvas.
+      // Conserva el estilo del hueco nuevo (algunas gráficas ajustan su altura a los datos)
+      if (oldBox && newBox && oldBox !== newBox) {
+        oldBox.style.cssText = newBox.style.cssText;
+        newBox.replaceWith(oldBox);
+      }
       canvas = existing.canvas;
       setEmpty(canvas, false);
       existing.data = config.data;
@@ -221,43 +225,6 @@ const Charts = (() => {
     }
     const center = document.getElementById(`${id}-total`);
     if (center) center.innerHTML = total ? `<span>Total gastado</span><strong>${UI.money(total)}</strong>` : '';
-  }
-
-  /* ---------------------------------------------------------------
-   * INGRESOS Y GASTOS POR MES (barras agrupadas, dashboard)
-   * ------------------------------------------------------------- */
-  function monthlyBars(id, endKey, months = 6) {
-    const c = colors();
-    const data = Stats.evolution(endKey, months);
-    const bar = (label, values, color) => ({
-      label,
-      data: values.map(centsToEuros),
-      backgroundColor: color,
-      borderRadius: 6,
-      borderSkipped: 'start',
-      categoryPercentage: 0.62,
-      barPercentage: 0.86,
-      maxBarThickness: 26,
-    });
-
-    const options = baseOptions(c);
-    options.plugins.tooltip.callbacks.footer = (items) => {
-      const month = data[items[0].dataIndex];
-      return month.count ? `Ahorro: ${formatMoney(month.savings, { sign: true })}` : 'Sin movimientos';
-    };
-    options.plugins.tooltip.footerColor = c.text;
-
-    draw(id, {
-      type: 'bar',
-      data: {
-        labels: data.map((m) => axisMonth(m.key)),
-        datasets: [
-          bar('Ingresos', data.map((m) => m.income), c.income),
-          bar('Gastos', data.map((m) => m.expense), c.expense),
-        ],
-      },
-      options,
-    }, data.every((m) => m.count === 0));
   }
 
   /* ---------------------------------------------------------------
@@ -347,6 +314,123 @@ const Charts = (() => {
     }, total === 0);
   }
 
+  /* ---------------------------------------------------------------
+   * EVOLUCIÓN CON SELECTOR DE PERIODO (dashboard)
+   * Barras de ingresos y gastos de cada tramo y línea del saldo acumulado en un segundo eje:
+   * el saldo suele ser mucho mayor que lo que entra o sale en un día.
+   * ------------------------------------------------------------- */
+
+  function bucketLabel(b) {
+    return b.unit === 'month' ? axisMonth(b.start.slice(0, 7)) : Utils.formatDate(b.start, 'dayMonth');
+  }
+
+  function bucketTitle(b) {
+    if (b.unit === 'day') return Utils.formatDate(b.start, 'long');
+    if (b.unit === 'week') return `Semana del ${Utils.formatDate(b.start, 'dayMonth')} al ${Utils.formatDate(b.end, 'dayMonth')}`;
+    return monthLabel(b.start.slice(0, 7));
+  }
+
+  function timelineChart(id, buckets) {
+    const c = colors();
+    const compact = isCompact();
+    const many = buckets.length > 14;
+    const options = baseOptions(c);
+    options.scales.y1 = {
+      position: 'right',
+      grid: { display: false },
+      border: { display: false },
+      ticks: { color: c.muted, callback: moneyTick, maxTicksLimit: compact ? 4 : 6, padding: compact ? 4 : 8 },
+    };
+    options.scales.x.ticks.maxTicksLimit = compact ? 6 : 12;
+    options.plugins.tooltip.callbacks.title = (items) => bucketTitle(buckets[items[0].dataIndex]);
+    options.plugins.tooltip.callbacks.footer = (items) => {
+      const b = buckets[items[0].dataIndex];
+      return b.count ? `Ahorro: ${formatMoney(b.income - b.expense, { sign: true })}` : 'Sin movimientos';
+    };
+    options.plugins.tooltip.footerColor = c.text;
+
+    const bar = (label, field, color) => ({
+      type: 'bar',
+      label,
+      data: buckets.map((b) => centsToEuros(b[field])),
+      backgroundColor: color,
+      borderRadius: many ? 3 : 6,
+      borderSkipped: 'start',
+      categoryPercentage: 0.62,
+      barPercentage: 0.86,
+      maxBarThickness: many ? 10 : 26,
+      order: 2,
+    });
+
+    draw(id, {
+      type: 'bar',
+      data: {
+        labels: buckets.map(bucketLabel),
+        datasets: [
+          {
+            type: 'line',
+            label: 'Saldo',
+            yAxisID: 'y1',
+            data: buckets.map((b) => centsToEuros(b.balance)),
+            borderColor: c.savings,
+            backgroundColor: c.savings,
+            borderWidth: 2.5,
+            pointRadius: many ? 0 : 3,
+            pointHoverRadius: 5,
+            pointBackgroundColor: c.savings,
+            pointBorderColor: c.surface,
+            pointBorderWidth: 2,
+            tension: 0.3,
+            order: 1,
+          },
+          bar('Ingresos', 'income', c.income),
+          bar('Gastos', 'expense', c.expense),
+        ],
+      },
+      options,
+    }, Transactions.all().length === 0);
+  }
+
+  /* ---------------------------------------------------------------
+   * COMPARACIÓN DE DOS MESES POR CATEGORÍA (barras horizontales)
+   * ------------------------------------------------------------- */
+  function compareBars(id, rows, labelA, labelB) {
+    const c = colors();
+    const compact = isCompact();
+    const top = rows.slice(0, 8);
+    const options = baseOptions(c);
+    options.indexAxis = 'y';
+    options.plugins.hoverGuide = {}; // la banda de resalte solo sirve para barras verticales
+    options.plugins.tooltip.callbacks.label = (ctx) => ` ${ctx.dataset.label}: ${formatMoney(Math.round(ctx.parsed.x * 100))}`;
+    options.scales = {
+      x: {
+        grid: { color: c.grid },
+        border: { display: false },
+        beginAtZero: true,
+        ticks: { color: c.muted, callback: moneyTick, maxTicksLimit: compact ? 4 : 6 },
+      },
+      y: { grid: { display: false }, border: { display: false }, ticks: { color: c.text2 } },
+    };
+    const dataset = (label, field, color) => ({
+      label,
+      data: top.map((r) => centsToEuros(r[field])),
+      backgroundColor: color,
+      borderRadius: 5,
+      borderSkipped: 'start',
+      categoryPercentage: 0.7,
+      barPercentage: 0.85,
+      maxBarThickness: 16,
+    });
+    draw(id, {
+      type: 'bar',
+      data: {
+        labels: top.map((r) => r.category.name),
+        datasets: [dataset(labelA, 'a', c.rest), dataset(labelB, 'b', c.savings)],
+      },
+      options,
+    }, top.length === 0);
+  }
+
   function init() {
     if (!available()) return;
     Chart.register(hoverGuide);
@@ -354,5 +438,5 @@ const Charts = (() => {
     Chart.defaults.font.size = 12;
   }
 
-  return { init, categoryDoughnut, monthlyBars, evolutionLine, dailyBar, available };
+  return { init, categoryDoughnut, evolutionLine, dailyBar, timelineChart, compareBars, available };
 })();

@@ -1,24 +1,65 @@
 /**
  * settings.js
- * Vista de Configuración: perfil, tema, categorías y gestión de datos (exportar, importar, borrar).
+ * Vista de Configuración: perfil, tema, dinero disponible, categorías y gestión de datos
+ * (exportar, importar con vista previa, copia previa a la actualización y borrar).
  */
 const Settings = (() => {
-  const { $, escapeHTML } = Utils;
+  const { $, escapeHTML, formatBytes, formatMoney, formatDate } = Utils;
 
-  function formatBytes(bytes) {
-    if (bytes < 1024) return `${bytes} B`;
-    return `${(bytes / 1024).toFixed(1).replace('.', ',')} KB`;
+  const HORIZONS = [
+    { value: 'month', label: 'Hasta final de mes' },
+    { value: '7', label: 'Próximos 7 días' },
+    { value: '30', label: 'Próximos 30 días' },
+    { value: 'off', label: 'No descontar (mostrar solo el saldo)' },
+  ];
+
+  /* ---------------------------------------------------------------
+   * EXPORTAR
+   * ------------------------------------------------------------- */
+
+  /** Descarga una copia completa (.json) con todos los datos y los recibos */
+  async function exportData({ name = 'copia', silent = false } = {}) {
+    const backup = Store.exportData();
+    let receipts = [];
+    try {
+      receipts = await Receipts.exportAll();
+    } catch (error) {
+      console.warn('No se pudieron leer los recibos', error);
+    }
+    backup.data.receipts = receipts;
+    Utils.downloadFile(`mybudget-${name}-${Utils.todayISO()}.json`, JSON.stringify(backup, null, 2));
+    if (!silent) {
+      UI.toast(receipts.length
+        ? `Copia de seguridad descargada (incluye ${receipts.length} recibo${receipts.length === 1 ? '' : 's'})`
+        : 'Copia de seguridad descargada');
+    }
+  }
+
+  function downloadMigrationBackup() {
+    const backup = Store.getMigrationBackup();
+    if (!backup) return;
+    Utils.downloadFile(`mybudget-copia-previa-v${backup.schemaVersion}-${Utils.todayISO()}.json`, JSON.stringify(backup, null, 2));
+    UI.toast('Copia previa a la actualización descargada');
+  }
+
+  async function deleteMigrationBackup() {
+    const ok = await UI.confirm({
+      title: 'Eliminar la copia previa',
+      message: 'Se borrará la copia de tus datos anterior a la actualización a MyBudget 1.1. Tus datos actuales no se modifican.',
+      confirmText: 'Eliminar copia',
+    });
+    if (!ok) return;
+    Store.clearMigrationBackup();
+    UI.toast('Copia previa eliminada', 'info');
+    App.render();
   }
 
   /* ---------------------------------------------------------------
-   * DATOS
+   * IMPORTAR (con vista previa y confirmación)
    * ------------------------------------------------------------- */
 
-  function exportData() {
-    const json = JSON.stringify(Store.exportData(), null, 2);
-    Utils.downloadFile(`mybudget-copia-${Utils.todayISO()}.json`, json);
-    UI.toast('Copia de seguridad descargada');
-  }
+  const MAX_IMPORT_BYTES = 60 * 1024 * 1024;
+  let pendingImport = null; // { inspection, fileName } mientras se muestra la vista previa
 
   function readFile(file) {
     return new Promise((resolve, reject) => {
@@ -29,13 +70,18 @@ const Settings = (() => {
     });
   }
 
+  /** Lee y valida el archivo SIN modificar nada; si es correcto muestra la vista previa */
   async function importData(file, button) {
     if (!file) return;
     if (!file.name.toLowerCase().endsWith('.json')) {
       UI.toast('Selecciona un archivo con extensión .json', 'error');
       return;
     }
-    UI.setLoading(button, true, 'Importando…');
+    if (file.size > MAX_IMPORT_BYTES) {
+      UI.toast(`El archivo es demasiado grande (${formatBytes(file.size)}).`, 'error');
+      return;
+    }
+    UI.setLoading(button, true, 'Analizando…');
     try {
       const text = await readFile(file);
       let json;
@@ -44,33 +90,85 @@ const Settings = (() => {
       } catch {
         throw new Error('El archivo no contiene un JSON válido.');
       }
-      Store.validateBackup(json);
-      UI.setLoading(button, false);
-      const ok = await UI.confirm({
-        title: 'Importar datos',
-        message: 'Se reemplazarán TODOS tus datos actuales por los del archivo. ¿Quieres continuar?',
-        confirmText: 'Importar',
-        danger: false,
-      });
-      if (!ok) return;
-      const result = Store.importData(json);
-      App.applyTheme(Store.getTheme() || 'light');
-      UI.toast(`Datos importados: ${result.transactions} movimientos${result.discarded ? ` (${result.discarded} descartados por no ser válidos)` : ''}`);
+      pendingImport = { inspection: Store.inspectBackup(json), fileName: file.name };
+      openImportPreview();
     } catch (error) {
-      UI.toast(error.message || 'No se pudo importar el archivo', 'error', 5000);
+      UI.toast(error.message || 'No se pudo leer el archivo', 'error', 6000);
     } finally {
       UI.setLoading(button, false);
     }
   }
 
+  function openImportPreview() {
+    const { inspection, fileName } = pendingImport;
+    const s = inspection.summary;
+    const discarded = (item) => (item.total > item.valid
+      ? ` <small class="text-warn">(${item.total - item.valid} no válido${item.total - item.valid === 1 ? '' : 's'}: se descartará${item.total - item.valid === 1 ? '' : 'n'})</small>`
+      : '');
+    const row = (label, value) => `<li><span>${label}</span><strong>${value}</strong></li>`;
+    const info = [escapeHTML(fileName)];
+    if (inspection.exportedAt && Utils.isValidISODate(inspection.exportedAt.slice(0, 10))) info.push(`exportado el ${formatDate(inspection.exportedAt.slice(0, 10))}`);
+    if (inspection.appVersion) info.push(`MyBudget ${escapeHTML(inspection.appVersion)}`);
+    info.push(`formato de datos v${inspection.version}${inspection.version < Store.SCHEMA_VERSION ? ' (se actualizará al importar)' : ''}`);
+
+    $('#import-file').innerHTML = info.join(' · ');
+    $('#import-summary').innerHTML = [
+      row('Movimientos', `${s.transactions.valid}${discarded(s.transactions)}`),
+      row('Gastos recurrentes', `${s.recurring.valid}${discarded(s.recurring)}`),
+      row('Objetivos de ahorro', `${s.goals.valid}${discarded(s.goals)}`),
+      row('Categorías personalizadas', s.customCategories),
+      row('Presupuesto mensual', s.monthlyBudget ? formatMoney(s.monthlyBudget) : 'Sin definir'),
+      row('Límites por categoría', s.categoryLimits),
+      row('Recibos', `${s.receipts.valid}${discarded(s.receipts)}`),
+    ].join('');
+    const current = Transactions.all().length;
+    $('#import-current').textContent = `Se reemplazarán TODOS tus datos actuales (${current} movimiento${current === 1 ? '' : 's'}, ${Recurring.all().length} recurrente(s), ${Goals.all().length} objetivo(s) y sus recibos). Esta acción no se puede deshacer.`;
+    $('#import-backup').checked = current > 0;
+    UI.openModal('import-modal');
+  }
+
+  async function confirmImport() {
+    if (!pendingImport) return;
+    const { inspection } = pendingImport;
+    const button = $('#import-confirm');
+    UI.setLoading(button, true, 'Importando…');
+    try {
+      if ($('#import-backup').checked) await exportData({ name: 'antes-de-importar', silent: true });
+      // Atómico: si no cabe todo, lanza un Error y no se modifica nada
+      const result = Store.applyImport(inspection);
+      let receiptsFailed = false;
+      try {
+        await Receipts.replaceAll(inspection.receipts);
+      } catch (error) {
+        console.error(error);
+        receiptsFailed = true;
+      }
+      App.applyTheme(Store.getTheme() || 'light');
+      UI.closeModal('import-modal');
+      pendingImport = null;
+      const message = `Datos importados: ${result.transactions} movimientos${result.discarded ? ` (${result.discarded} descartados por no ser válidos)` : ''}.`;
+      UI.toast(receiptsFailed ? `${message} No se han podido guardar los recibos: el almacenamiento está lleno.` : message,
+        receiptsFailed ? 'warning' : 'success', 6000);
+    } catch (error) {
+      UI.toast(error.message || 'No se pudo importar el archivo', 'error', 6000);
+    } finally {
+      UI.setLoading(button, false);
+    }
+  }
+
+  /* ---------------------------------------------------------------
+   * BORRAR / DATOS DE EJEMPLO
+   * ------------------------------------------------------------- */
+
   async function clearAll() {
     const ok = await UI.confirm({
       title: 'Borrar todos los datos',
-      message: 'Se eliminarán todos los movimientos, presupuestos, recurrentes, objetivos y categorías personalizadas. Esta acción NO se puede deshacer. Te recomendamos exportar una copia antes.',
+      message: 'Se eliminarán todos los movimientos, recibos, presupuestos, recurrentes, objetivos y categorías personalizadas. Esta acción NO se puede deshacer. Te recomendamos exportar una copia antes.',
       confirmText: 'Sí, borrar todo',
     });
     if (!ok) return;
     Store.clearAll();
+    Receipts.clear().catch((error) => console.error(error));
     UI.toast('Todos los datos han sido eliminados', 'info');
   }
 
@@ -104,10 +202,24 @@ const Settings = (() => {
    * VISTA
    * ------------------------------------------------------------- */
 
+  /** Rellena el espacio de los recibos cuando termina de leerlo (es asíncrono) */
+  function fillReceiptStats() {
+    Receipts.stats().then((stats) => {
+      const count = $('#receipts-count');
+      const size = $('#receipts-size');
+      if (!count || !size) return;
+      count.textContent = stats.count;
+      size.textContent = stats.count ? formatBytes(stats.bytes) : '0 B';
+      const where = $('#receipts-store');
+      if (where) where.textContent = stats.store === 'indexeddb' ? 'IndexedDB' : 'LocalStorage';
+    }).catch(() => {});
+  }
+
   function render() {
     const view = $('#view-configuracion');
     const settings = Store.get('settings');
     const theme = document.documentElement.dataset.theme;
+    const backup = Store.getMigrationBackup();
     const counts = {
       transactions: Transactions.all().length,
       categories: Categories.all().filter((c) => c.custom).length,
@@ -116,7 +228,7 @@ const Settings = (() => {
     };
 
     view.innerHTML = `
-      <div class="grid grid-2">
+      <div class="grid grid-3">
         <section class="card">
           <h2 class="card-title">${Icons.get('user', 18)}Perfil</h2>
           <form id="profile-form" class="inline-form" novalidate>
@@ -141,6 +253,17 @@ const Settings = (() => {
             </button>
           </div>
         </section>
+
+        <section class="card">
+          <h2 class="card-title">${Icons.get('wallet', 18)}Dinero disponible</h2>
+          <div class="field">
+            <label for="available-horizon">Descontar del saldo los pagos recurrentes pendientes</label>
+            <select id="available-horizon">
+              ${HORIZONS.map((h) => `<option value="${h.value}" ${settings.availableHorizon === h.value ? 'selected' : ''}>${h.label}</option>`).join('')}
+            </select>
+          </div>
+          <p class="hint">${Icons.get('info', 14)}<span>Es solo un cálculo para el dashboard y el informe: tu saldo real no cambia.</span></p>
+        </section>
       </div>
 
       <section class="card">
@@ -158,24 +281,26 @@ const Settings = (() => {
             <ul class="category-list">${Categories.renderList('income')}</ul>
           </div>
         </div>
+        <p class="hint">${Icons.get('info', 14)}<span>Las categorías predeterminadas se pueden editar pero no eliminar. Al eliminar una categoría con movimientos podrás elegir a cuál pasan.</span></p>
       </section>
 
       <section class="card">
         <h2 class="card-title">${Icons.get('database', 18)}Tus datos</h2>
-        <p class="muted">Todo se guarda en el LocalStorage de este navegador. Nada sale de tu ordenador.</p>
+        <p class="muted">Todo se guarda en este navegador (LocalStorage y, para los recibos, IndexedDB). Nada sale de tu dispositivo.</p>
         <ul class="data-counts">
           <li><strong>${counts.transactions}</strong><span>movimientos</span></li>
           <li><strong>${counts.recurring}</strong><span>recurrentes</span></li>
           <li><strong>${counts.goals}</strong><span>objetivos</span></li>
           <li><strong>${counts.categories}</strong><span>categorías propias</span></li>
-          <li><strong>${formatBytes(Store.usage())}</strong><span>ocupado</span></li>
+          <li><strong id="receipts-count">…</strong><span>recibos (<span id="receipts-size">…</span>)</span></li>
+          <li><strong>${formatBytes(Store.usage())}</strong><span>datos en LocalStorage</span></li>
         </ul>
 
         <div class="data-actions">
           <div class="data-action">
             <div>
               <h3>Exportar datos</h3>
-              <p class="muted">Descarga un archivo .json con toda tu información.</p>
+              <p class="muted">Descarga un archivo .json con toda tu información: movimientos, recibos, presupuestos, objetivos, recurrentes, categorías y preferencias.</p>
             </div>
             <button class="btn btn-ghost" data-action="export-data">${Icons.get('download', 18)}Exportar</button>
           </div>
@@ -189,11 +314,22 @@ const Settings = (() => {
           <div class="data-action">
             <div>
               <h3>Importar datos</h3>
-              <p class="muted">Recupera una copia exportada anteriormente (.json).</p>
+              <p class="muted">Recupera una copia exportada anteriormente (.json). Antes de reemplazar nada verás qué contiene y podrás descargar una copia de tus datos actuales.</p>
             </div>
             <button class="btn btn-ghost" id="import-btn" type="button">${Icons.get('upload', 18)}Importar</button>
             <input type="file" id="import-input" accept=".json,application/json" hidden>
           </div>
+          ${backup ? `
+            <div class="data-action">
+              <div>
+                <h3>Copia previa a la actualización</h3>
+                <p class="muted">Tus datos tal y como estaban antes de actualizar a MyBudget 1.1 (formato v${backup.schemaVersion}), guardados el ${formatDate(String(backup.exportedAt).slice(0, 10))}. Se puede importar si algo no fuera bien.</p>
+              </div>
+              <div class="data-action-buttons">
+                <button class="btn btn-ghost" data-action="download-migration-backup">${Icons.get('shield', 18)}Descargar</button>
+                <button class="btn btn-link btn-sm" data-action="delete-migration-backup">Eliminar</button>
+              </div>
+            </div>` : ''}
           <div class="data-action">
             <div>
               <h3>Datos de ejemplo</h3>
@@ -208,10 +344,11 @@ const Settings = (() => {
         <div class="danger-zone">
           <div>
             <h3>Borrar todos los datos</h3>
-            <p class="muted">Elimina permanentemente toda la información guardada.</p>
+            <p class="muted">Elimina permanentemente toda la información guardada, también los recibos.</p>
           </div>
           <button class="btn btn-danger" data-action="clear-all">${Icons.get('trash', 18)}Borrar todo</button>
         </div>
+        <p class="app-version">MyBudget v${Store.APP_VERSION.replace(/\.0$/, '')} · formato de datos v${Store.SCHEMA_VERSION} · recibos en <span id="receipts-store">…</span></p>
       </section>
 
       <section class="card shortcuts-card">
@@ -229,6 +366,13 @@ const Settings = (() => {
       UI.toast(userName ? `¡Hola, ${userName}! Nombre guardado` : 'Nombre eliminado');
     });
 
+    $('#available-horizon').addEventListener('change', (event) => {
+      const value = event.target.value;
+      if (!Store.AVAILABLE_HORIZONS.includes(value)) return;
+      Store.set('settings', { ...Store.get('settings'), availableHorizon: value });
+      UI.toast(value === 'off' ? 'El dashboard mostrará solo el saldo' : 'Preferencia de dinero disponible guardada');
+    });
+
     const input = $('#import-input');
     const button = $('#import-btn');
     button.addEventListener('click', () => input.click());
@@ -236,18 +380,27 @@ const Settings = (() => {
       importData(input.files[0], button);
       input.value = ''; // permite volver a importar el mismo archivo
     });
+
+    fillReceiptStats();
+  }
+
+  function init() {
+    $('#import-confirm').addEventListener('click', confirmImport);
+    $('#import-modal').addEventListener('close', () => { pendingImport = null; });
   }
 
   const actions = {
-    'export-data': exportData,
+    'export-data': () => exportData(),
     'clear-all': clearAll,
     'load-demo': loadDemo,
     'clear-demo': clearDemo,
+    'download-migration-backup': downloadMigrationBackup,
+    'delete-migration-backup': deleteMigrationBackup,
     'add-category': () => Categories.openForm(),
     'edit-category': (id) => Categories.openForm(id),
     'delete-category': (id) => Categories.remove(id),
     'hide-demo-banner': () => Store.set('settings', { ...Store.get('settings'), demoBannerHidden: true }),
   };
 
-  return { render, actions };
+  return { render, init, actions, exportData };
 })();

@@ -8,10 +8,15 @@
  *       Test.equal(sumar(1, 2), 3);
  *     });
  *   });
- *   Test.render(); // pinta los resultados en la página
+ *   Test.itAsync('lee un archivo', async () => { … });  // tests asíncronos
+ *   Test.render(); // ejecuta los tests asíncronos y pinta los resultados en la página
+ *
+ * Los tests asíncronos no se ejecutan al declararlos: se guardan y se ejecutan uno detrás de otro
+ * en render(), cuando ya han terminado los síncronos. Así nunca se pisan los datos entre sí.
  */
 const Test = (() => {
   const groups = [];
+  const queue = []; // tests asíncronos pendientes: { test, fn }
   let current = null;
 
   /** Muestra un valor en los mensajes de error (NaN y textos se ven tal cual) */
@@ -45,6 +50,28 @@ const Test = (() => {
     current.tests.push(test);
   }
 
+  /** Test asíncrono (fn devuelve una promesa). Falla si la promesa se rechaza o tarda más de 10 s */
+  function itAsync(name, fn) {
+    const test = { name, ok: true, error: '' };
+    current.tests.push(test);
+    queue.push({ test, fn });
+  }
+
+  async function runQueue() {
+    while (queue.length) {
+      const { test, fn } = queue.shift();
+      try {
+        await Promise.race([
+          fn(),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('tiempo agotado (10 s)')), 10000)),
+        ]);
+      } catch (error) {
+        test.ok = false;
+        test.error = error.message;
+      }
+    }
+  }
+
   /* ---------- Aserciones ---------- */
 
   function equal(actual, expected, message = '') {
@@ -76,7 +103,8 @@ const Test = (() => {
     return String(text).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
   }
 
-  function render(root = document.getElementById('results')) {
+  async function render(root = document.getElementById('results')) {
+    await runQueue();
     const result = summary();
     const allOk = result.failed === 0;
 
@@ -108,5 +136,5 @@ const Test = (() => {
     return result;
   }
 
-  return { describe, it, equal, close, ok, render, summary };
+  return { describe, it, itAsync, equal, close, ok, render, summary };
 })();

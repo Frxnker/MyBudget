@@ -191,18 +191,9 @@ const UI = (() => {
     });
   }
 
-  /** Valida una cantidad en euros. Devuelve { cents } o { error } */
-  function validateAmount(raw, { required = true, allowZero = false, label = 'La cantidad' } = {}) {
-    if (raw === '' || raw === null || raw === undefined) {
-      return required ? { error: `${label} es obligatoria.` } : { cents: 0 };
-    }
-    const cents = Utils.toCents(raw);
-    if (Number.isNaN(cents)) return { error: `${label} no es un número válido (ej. 12,50).` };
-    if (allowZero ? cents < 0 : cents <= 0) {
-      return { error: allowZero ? `${label} no puede ser negativa.` : `${label} debe ser mayor que 0.` };
-    }
-    if (cents > 99999999999) return { error: `${label} es demasiado grande.` };
-    return { cents };
+  /** Valida una cantidad en euros. Devuelve { cents } o { error } (ver validation.js) */
+  function validateAmount(raw, options) {
+    return Validate.amount(raw, options);
   }
 
   /* ---------------------------------------------------------------
@@ -343,6 +334,58 @@ const UI = (() => {
       </span>`;
   }
 
+  /**
+   * Comparación con un periodo anterior para el pie de un KPI: "↓ 8,2 % · vs. 742 € en sep."
+   * La flecha y el texto indican la dirección (no solo el color). "goodWhenUp" indica si subir es bueno.
+   */
+  function compareFoot(current, previous, { goodWhenUp = true, label = '', points = false } = {}) {
+    const where = label ? ` ${escapeHTML(label)}` : '';
+    if (previous === null || previous === undefined || !Number.isFinite(previous)) {
+      return '<span class="trend trend-neutral">Sin datos del periodo anterior</span>';
+    }
+    const reference = points
+      ? `vs. ${Utils.formatPercent(previous)}`
+      : `vs. ${Utils.formatMoney(previous, { decimals: Math.abs(previous) < 100000 })}`;
+    const diff = current - previous;
+    // Sin referencia (0 €) no hay porcentaje: solo se muestra el valor anterior
+    if (!points && previous === 0) {
+      return `<span class="trend trend-neutral"><span class="trend-text">${reference}${where}</span></span>`;
+    }
+    if (Math.abs(diff) < (points ? 0.05 : 1)) {
+      return `<span class="trend trend-neutral"><span class="trend-chip">= Igual</span><span class="trend-text">${reference}${where}</span></span>`;
+    }
+    const up = diff > 0;
+    const value = points
+      ? `${Math.abs(diff).toFixed(1).replace('.', ',')} pts`
+      : Utils.formatPercent(Math.abs((diff / Math.abs(previous)) * 100));
+    return `
+      <span class="trend ${up === goodWhenUp ? 'trend-good' : 'trend-bad'}">
+        <span class="trend-chip">${Icons.get(up ? 'arrowUp' : 'arrowDown', 12)}<span class="sr-only">${up ? 'Sube' : 'Baja'} </span>${value}</span>
+        <span class="trend-text">${reference}${where}</span>
+      </span>`;
+  }
+
+  /** Mensaje de estado con icono y texto (ok | warn | over | info), nunca solo con color */
+  function statusNote(level, html, icon = null) {
+    const icons = { ok: 'check', warn: 'alert', over: 'alert', info: 'info' };
+    return `<p class="status-note status-note-${level}">${Icons.get(icon || icons[level] || 'info', 16)}<span>${html}</span></p>`;
+  }
+
+  /**
+   * Grupo de botones para elegir una opción (p. ej. el periodo de una gráfica).
+   * options: [{ value, label, short }] · cada botón lleva data-action y data-id = value
+   */
+  function choiceGroup({ action, options, selected, label }) {
+    return `
+      <div class="choice-group" role="group" aria-label="${escapeHTML(label)}">
+        ${options.map((o) => `
+          <button type="button" class="choice ${o.value === selected ? 'is-active' : ''}" data-action="${escapeHTML(action)}"
+            data-id="${escapeHTML(o.value)}" aria-pressed="${o.value === selected}">
+            ${o.short ? `<span class="label-long">${escapeHTML(o.label)}</span><span class="label-short" aria-hidden="true">${escapeHTML(o.short)}</span>` : escapeHTML(o.label)}
+          </button>`).join('')}
+      </div>`;
+  }
+
   /** Estado de "cargando" en un botón */
   function setLoading(button, loading, text = 'Procesando…') {
     if (loading) {
@@ -366,6 +409,6 @@ const UI = (() => {
     toast, openModal, closeModal, initModals, actionSheet, isAnyModalOpen, confirm,
     clearErrors, showErrors, liveClearErrors, validateAmount,
     emptyState, budgetLevel, progressBar, ring, sparkline, money, kpi, dateTile, categoryChip,
-    categoryBadge, trendBadge, setLoading, fillSelect,
+    categoryBadge, trendBadge, compareFoot, statusNote, choiceGroup, setLoading, fillSelect,
   };
 })();

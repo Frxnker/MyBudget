@@ -3,9 +3,35 @@
  * Cálculos financieros puros (no tocan el DOM). Todas las cantidades en céntimos.
  */
 const Stats = (() => {
-  const { sumBy, addMonths, todayISO, daysInMonth, currentMonthKey } = Utils;
+  const { sumBy, addMonths, todayISO, daysInMonth, currentMonthKey, monthEnd, percent } = Utils;
 
   const sumType = (list, type) => sumBy(list.filter((t) => t.type === type), (t) => t.amount);
+
+  /*
+   * Memoria de resultados. Las vistas piden los mismos cálculos varias veces en cada pintado
+   * (KPIs, avisos, consejos, presupuesto…). Store sustituye la lista de movimientos completa en cada
+   * cambio, así que basta con comparar referencias para saber si los resultados siguen siendo válidos.
+   * También dependen de las categorías (nombres y colores) y del día de hoy.
+   * Los resultados son de solo lectura: no hay que modificarlos.
+   */
+  let memoList = null;
+  let memoCategories = null;
+  let memoDay = '';
+  let memo = new Map();
+
+  function cached(key, compute) {
+    const list = Transactions.all();
+    const categories = Categories.all();
+    const day = todayISO();
+    if (list !== memoList || categories !== memoCategories || day !== memoDay) {
+      memo = new Map();
+      memoList = list;
+      memoCategories = categories;
+      memoDay = day;
+    }
+    if (!memo.has(key)) memo.set(key, compute());
+    return memo.get(key);
+  }
 
   /** Variación porcentual respecto a un valor anterior (null si no hay referencia) */
   function change(current, previous) {
@@ -22,14 +48,21 @@ const Stats = (() => {
   }
 
   function monthSummary(key) {
-    return summarize(Transactions.forMonth(key));
+    return cached(`month:${key}`, () => summarize(Transactions.forMonth(key)));
+  }
+
+  /** Resumen de los movimientos entre dos fechas ISO (ambas incluidas) */
+  function periodSummary(from, to) {
+    return cached(`period:${from}:${to}`, () => summarize(Transactions.between(from, to)));
   }
 
   /** Saldo acumulado: todos los ingresos menos todos los gastos hasta hoy */
   function balance() {
-    const today = todayISO();
-    const list = Transactions.all().filter((t) => t.date <= today);
-    return sumType(list, 'income') - sumType(list, 'expense');
+    return cached('balance', () => {
+      const today = todayISO();
+      const list = Transactions.all().filter((t) => t.date <= today);
+      return sumType(list, 'income') - sumType(list, 'expense');
+    });
   }
 
   /**
@@ -73,7 +106,49 @@ const Stats = (() => {
   }
 
   function categoriesForMonth(key) {
-    return byCategory(Transactions.forMonth(key, 'expense'));
+    return cached(`categories:${key}`, () => byCategory(Transactions.forMonth(key, 'expense')));
+  }
+
+  /** Ingresos de un mes agrupados por categoría */
+  function incomeByCategory(key) {
+    return cached(`income-categories:${key}`, () => byCategory(Transactions.forMonth(key, 'income')));
+  }
+
+  /** Gastos (o ingresos) por categoría entre dos fechas */
+  function categoriesBetween(from, to, type = 'expense') {
+    return cached(`categories:${from}:${to}:${type}`,
+      () => byCategory(Transactions.between(from, to).filter((t) => t.type === type)));
+  }
+
+  /**
+   * Mes comparado con el anterior. En el mes en curso (aún sin terminar) se compara con el mismo
+   * periodo del mes anterior: del 1 al 7 de octubre frente al 1 al 7 de septiembre. Comparar unos
+   * pocos días con un mes completo daría siempre la impresión de que se gasta mucho menos.
+   */
+  function monthComparison(key) {
+    const prevKey = addMonths(key, -1);
+    if (key !== currentMonthKey()) {
+      return { key, prevKey, partial: false, current: monthSummary(key), previous: monthSummary(prevKey), prevEnd: monthEnd(prevKey) };
+    }
+    const today = todayISO();
+    const day = Number(today.slice(8, 10));
+    const prevEnd = `${prevKey}-${String(Math.min(day, daysInMonth(prevKey))).padStart(2, '0')}`;
+    return {
+      key,
+      prevKey,
+      partial: true,
+      day,
+      current: periodSummary(`${key}-01`, today),
+      previous: periodSummary(`${prevKey}-01`, prevEnd),
+      prevEnd,
+    };
+  }
+
+  /** Media mensual de un campo (income, expense, savings) en los "count" meses que terminan en "endKey" */
+  function averageMonthly(endKey, count, field) {
+    let total = 0;
+    for (let i = 0; i < count; i++) total += monthSummary(addMonths(endKey, -i))[field];
+    return Math.round(total / count);
   }
 
   /** Categorías con más gasto del mes, comparadas con el mes anterior */
@@ -177,8 +252,92 @@ const Stats = (() => {
     });
   }
 
+  /**
+   * Comparación completa entre dos meses: "a" es el mes base y "b" el comparado.
+   * Las diferencias se calculan de a → b.
+   */
+  function compareMonths(a, b) {
+    const sa = monthStats(a);
+    const sb = monthStats(b);
+    const metric = (id, label, field, goodWhenUp, kind = 'money') => ({
+      id, label, kind, goodWhenUp, a: sa[field], b: sb[field], ...Finance.compare(sb[field], sa[field]),
+    });
+    // La tasa de ahorro solo tiene sentido si hubo ingresos; su diferencia se expresa en puntos
+    const rateA = sa.income > 0 ? sa.rate : null;
+    const rateB = sb.income > 0 ? sb.rate : null;
+    return {
+      a: { key: a, ...sa },
+      b: { key: b, ...sb },
+      metrics: [
+        metric('income', 'Ingresos', 'income', true),
+        metric('expense', 'Gastos', 'expense', false),
+        metric('savings', 'Ahorro', 'savings', true),
+        {
+          id: 'rate', label: 'Tasa de ahorro', kind: 'points', goodWhenUp: true, a: rateA, b: rateB,
+          diff: rateA !== null && rateB !== null ? rateB - rateA : null, pct: null,
+        },
+        metric('count', 'Movimientos', 'count', null, 'count'),
+        metric('avgDaily', 'Gasto medio diario', 'avgDaily', false),
+      ],
+      expenses: Finance.compareCategories(categoriesForMonth(a), categoriesForMonth(b)),
+      incomes: Finance.compareCategories(incomeByCategory(a), incomeByCategory(b)),
+    };
+  }
+
+  /** Estadísticas de una categoría en el mes "key" y en los 5 meses anteriores */
+  function categoryDetail(categoryId, key) {
+    const category = Categories.get(categoryId);
+    const all = Transactions.all().filter((t) => t.categoryId === categoryId);
+    const monthTotal = (k) => sumBy(Transactions.forMonth(k).filter((t) => t.categoryId === categoryId), (t) => t.amount);
+    const history = Array.from({ length: 6 }, (_, i) => {
+      const k = addMonths(key, i - 5);
+      return { key: k, total: monthTotal(k) };
+    });
+    const current = history[5].total;
+    const previous = history[4].total;
+    const typeTotal = monthSummary(key)[category.type];
+    const last = all.reduce((latest, t) => (!latest || t.date > latest.date ? t : latest), null);
+    return {
+      category,
+      key,
+      current,
+      previous,
+      change: change(current, previous),
+      share: percent(current, typeTotal),
+      average: Math.round(sumBy(history, (h) => h.total) / history.length),
+      history,
+      monthCount: Transactions.forMonth(key).filter((t) => t.categoryId === categoryId).length,
+      count: all.length,
+      total: sumBy(all, (t) => t.amount),
+      last,
+    };
+  }
+
+  /** Evolución de ingresos, gastos y saldo en el periodo que termina en "end" (ver Finance.timeline) */
+  function timeline(range, end) {
+    return cached(`timeline:${range}:${end}`, () => Finance.timeline(Transactions.all(), range, end));
+  }
+
+  /**
+   * Gasto medio de cada día de la semana entre dos fechas: [{ weekday (0 = lunes), avg, total, days }].
+   * La media se calcula sobre todos los lunes (martes…) del periodo, también los que no tuvieron gastos.
+   */
+  function weekdayExpenses(from, to) {
+    const result = Array.from({ length: 7 }, (_, weekday) => ({ weekday, total: 0, days: 0, avg: 0 }));
+    for (let day = from; day <= to; day = Utils.addDays(day, 1)) {
+      result[(Utils.parseISODate(day).getDay() + 6) % 7].days += 1;
+    }
+    Transactions.between(from, to).filter((t) => t.type === 'expense').forEach((t) => {
+      result[(Utils.parseISODate(t.date).getDay() + 6) % 7].total += t.amount;
+    });
+    result.forEach((r) => { r.avg = r.days ? Math.round(r.total / r.days) : 0; });
+    return result;
+  }
+
   return {
-    change, summarize, monthSummary, balance, balanceHistory, monthTrends, byCategory, categoriesForMonth,
-    topCategories, categorySpent, dailyExpenses, evolution, elapsedDaysInMonth, monthStats, yearStats, yearSummary,
+    change, summarize, monthSummary, periodSummary, balance, balanceHistory, monthTrends, monthComparison,
+    byCategory, categoriesForMonth, incomeByCategory, categoriesBetween, topCategories, categorySpent,
+    dailyExpenses, evolution, averageMonthly, elapsedDaysInMonth, monthStats, yearStats, yearSummary,
+    compareMonths, categoryDetail, timeline, weekdayExpenses,
   };
 })();
