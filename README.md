@@ -78,6 +78,9 @@ Proyecto de DAW hecho con HTML5, CSS3 y JavaScript vanilla.
 - Antes de importar se **valida** el archivo, se informa de los errores y se muestra una **vista previa** (qué contiene y qué se descartará) con la opción de descargar antes tus datos actuales.
 - La importación es **atómica**: si no cabe todo, no se modifica nada.
 
+**Instalable en el móvil**
+- Icono propio para iOS y Android y `manifest.webmanifest`: se añade a la pantalla de inicio con el icono de MyBudget y se abre a pantalla completa (ver *Instalarla en el móvil*).
+
 **Accesibilidad, UX y rendimiento**
 - Enlace "Saltar al contenido", tablas con título para lectores de pantalla, selectores con `aria-pressed`, avisos sin `role="alert"` repetitivo, foco visible en todos los controles nuevos y estados (subidas, bajadas, avisos) indicados con icono y texto además del color.
 - Campos deshabilitados claramente visibles y mensajes de error bajo cada campo (también para imágenes).
@@ -94,6 +97,26 @@ Proyecto de DAW hecho con HTML5, CSS3 y JavaScript vanilla.
 No hace falta instalar nada ni tener conexión: la fuente y Chart.js van incluidas en el proyecto. La primera vez se cargan datos de ejemplo para que el dashboard no aparezca vacío; puedes borrarlos desde el aviso del dashboard o desde **Configuración → Datos de ejemplo**.
 
 > Si prefieres servirla con un servidor local: `npx serve .` o la extensión *Live Server* de VS Code.
+
+### Instalarla en el móvil (icono en la pantalla de inicio)
+
+La app tiene icono propio y un *manifest* (`manifest.webmanifest`), así que se puede añadir a la pantalla de inicio y se abre a pantalla completa, sin la barra del navegador, como una app:
+
+- **Android (Chrome)**: menú ⋮ → *Añadir a pantalla de inicio* o *Instalar aplicación*.
+- **iPhone / iPad (Safari)**: botón *Compartir* → *Añadir a pantalla de inicio*.
+
+Para esto la app tiene que estar publicada en una web (por ejemplo, GitHub Pages) o servida con un servidor local: un archivo abierto con `file://` no se puede instalar. Los datos se guardan en el navegador del móvil, igual que en el ordenador.
+
+| Archivo | Uso |
+|---|---|
+| `assets/icons/logo.svg` | Favicon (navegadores que admiten SVG) e icono del manifest |
+| `assets/icons/favicon-32.png` | Favicon para los navegadores que no admiten SVG |
+| `assets/icons/apple-touch-icon.png` | Icono de iOS (180 × 180, a sangre: iOS redondea las esquinas) |
+| `assets/icons/icon-192.png` · `icon-512.png` | Iconos de Android |
+| `assets/icons/icon-maskable-512.png` | Icono adaptable de Android (el gráfico queda dentro de la zona segura de la máscara) |
+| `assets/icons/app-icon.svg` | Origen de los iconos a sangre (`apple-touch-icon` y `maskable`) |
+
+Si cambias el logo, vuelve a generar los PNG desde `logo.svg` (versión con esquinas redondeadas) y `app-icon.svg` (a sangre) en esos mismos tamaños.
 
 ### Uso rápido
 
@@ -160,10 +183,11 @@ Los cálculos financieros están en módulos sin DOM (`finance.js`, `statistics.
 ```text
 MyBudget/
 ├── index.html               # Estructura HTML, modales y carga de scripts
+├── manifest.webmanifest     # Nombre, icono y colores al instalarla en el móvil
 ├── README.md
 ├── assets/
 │   ├── fonts/               # Plus Jakarta Sans (woff2) y su licencia (OFL.txt)
-│   └── icons/logo.svg       # Logo y favicon
+│   └── icons/               # Logo y favicon (SVG), iconos PNG para iOS y Android
 ├── css/
 │   ├── style.css            # Variables de tema, layout, componentes, vistas e impresión
 │   └── responsive.css       # Adaptación a portátil, tablet y móvil
@@ -367,7 +391,7 @@ El proyecto no incluye capturas de pantalla. Para ver la aplicación basta con a
 ## Roadmap
 
 ### Posibles mejoras para v1.2
-- **PWA** (manifest y *service worker*) para instalarla en el móvil o el escritorio. Requiere servirla desde un servidor web, porque los *service workers* no funcionan con `file://`.
+- **Service worker** para que la app instalada abra sin conexión aunque el navegador haya borrado su caché (el icono y el *manifest* ya están). Requiere servirla desde un servidor web, porque los *service workers* no funcionan con `file://`.
 - **Ingresos recurrentes** (nómina) para prever también lo que va a entrar y calcular el saldo a final de mes.
 - Registrar automáticamente los pagos recurrentes vencidos, preguntando antes al usuario.
 - **Presupuestos distintos para cada mes** y traspaso del sobrante al mes siguiente.

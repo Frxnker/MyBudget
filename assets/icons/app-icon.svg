@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" fill="none">
+  <!-- Icono de la app a sangre (sin esquinas redondeadas): iOS y Android aplican su propia forma.
+       El gráfico ocupa el centro (dentro del 80 % central), así no se recorta con ninguna máscara. -->
+  <rect width="48" height="48" fill="#5b5bd6"/>
+  <path d="M13 31.5 20.5 24l5 5L35 18.5" stroke="#fff" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M28.5 18.5H35V25" stroke="#c4f2a1" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
